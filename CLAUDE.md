@@ -2,22 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Repo state: bootstrap / migration-in-progress
+## Repo state
 
-`Sources/OCCTSwiftTools/` and `Tests/OCCTSwiftToolsTests/` are **empty** (`.gitkeep` only). Implementation has not landed yet — it is being lifted out of [OCCTSwiftViewport's sub-product slot](https://github.com/gsdali/OCCTSwiftViewport) into this standalone repo per [SPEC.md](SPEC.md).
+`v0.1.0` shipped the wholesale migration out of OCCTSwiftViewport's sub-product slot. The 7 source files (`BodyUtilities`, `CADFileLoader`, `CurveConverter`, `ExportManager`, `ScriptManifest`, `SurfaceConverter`, `WireConverter`) live in `Sources/OCCTSwiftTools/`; 6 Swift Testing suites cover them in `Tests/OCCTSwiftToolsTests/`. See [docs/CHANGELOG.md](docs/CHANGELOG.md) for the API surface, and [SPEC.md](SPEC.md) "Sequencing" for the v0.2.0+ wishlist (`Shape.measure`, IGES/glTF loaders, progress callbacks).
 
-**Before writing any code, read the source you are migrating from:**
-
-```bash
-ls ~/Projects/OCCTSwiftViewport/Sources/OCCTSwiftTools/
-# BodyUtilities.swift  CADFileLoader.swift  CurveConverter.swift
-# ExportManager.swift  ScriptManifest.swift  SurfaceConverter.swift
-# WireConverter.swift
-```
-
-**Move, don't rewrite.** Public API names should match what already exists there. The headline shape is `ViewportBody.from(_ shape: Shape, …)` plus a `CADFile` enum with `loadSTEP/loadIGES/loadSTL/loadGLTF`. Do not invent new API in this repo before the migration is complete (v0.1.0 = wholesale migration; v0.2.0 = first additive features — see SPEC.md "Sequencing").
-
-The migration also requires a coordinated change in OCCTSwiftViewport: drop its `OCCTSwiftTools` library product/target and cut `v0.51.0` of that repo in the same release that ships `v0.1.0` here.
+Add new API freely — the "move, don't rewrite" rule from the migration is no longer in force.
 
 ## Architectural position (load-bearing context)
 
@@ -32,7 +21,7 @@ OCCTSwift   OCCTSwiftViewport
 
 The whole point of extracting this repo is to keep OCCTSwiftViewport cleanly OCCT-free so the two kernels stay decoupled. Do not add OCCT-aware code to OCCTSwiftViewport, and do not add Metal/rendering code to OCCTSwift — both of those go here.
 
-**`ViewportBody.faceIndices` (per-triangle source-face index) is load-bearing.** OCCTSwiftAIS reads it to map GPU pick results back to `TopoDS_Face` instances. Preserve it across the migration; do not change its semantics without a coordinated change in OCCTSwiftAIS.
+**`ViewportBody.faceIndices` (per-triangle source-face index) is load-bearing.** OCCTSwiftAIS will read it to map GPU pick results back to `TopoDS_Face` instances. `CADBodyMetadata.faceIndices` mirrors it. Do not change semantics on either side without a coordinated change in OCCTSwiftAIS — the contract is `indices.count / 3 == faceIndices.count`, one face index per triangle.
 
 ## Build & test
 
@@ -71,4 +60,4 @@ Per SPEC.md: selection/picking semantics, manipulator widgets, and dimension ann
 
 - `~/Projects/OCCTSwift/CLAUDE.md` — kernel project conventions (this repo follows them)
 - `~/Projects/OCCTSwift/docs/visualization-research.md` — *why* the three-layer cake exists
-- `~/Projects/OCCTSwiftViewport/Sources/OCCTSwiftTools/` — the code being migrated in
+- [docs/CHANGELOG.md](docs/CHANGELOG.md) — release history; v0.1.0 entry documents the dependency floor reasoning, including why OCCTSwiftViewport ≥ 0.51.0 is a hard floor (not advisory)
