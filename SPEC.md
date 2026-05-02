@@ -171,7 +171,7 @@ This repo does **not** ship a binary. It depends on OCCTSwift (which ships `OCCT
 ```swift
 // Package.swift dependencies
 .package(url: "https://github.com/gsdali/OCCTSwift.git",         from: "0.167.0"),
-.package(url: "https://github.com/gsdali/OCCTSwiftViewport.git", from: "0.50.0"),
+.package(url: "https://github.com/gsdali/OCCTSwiftViewport.git", from: "0.51.0"),
 ```
 
 Pin to specific versions in `Package.resolved`; bump deliberately.

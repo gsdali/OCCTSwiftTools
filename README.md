@@ -4,7 +4,7 @@
 
 The bridge layer between [OCCTSwift](https://github.com/gsdali/OCCTSwift) (B-Rep modeling kernel) and [OCCTSwiftViewport](https://github.com/gsdali/OCCTSwiftViewport) (Metal viewport).
 
-> Status: **scaffolding**. Implementation is being migrated from OCCTSwiftViewport's `OCCTSwiftTools` sub-product into this standalone repo. See [SPEC.md](SPEC.md).
+> Status: **v0.1.0**. The migration out of OCCTSwiftViewport's sub-product slot is complete. See [docs/CHANGELOG.md](docs/CHANGELOG.md) and [SPEC.md](SPEC.md).
 
 ## What it does
 
@@ -55,7 +55,7 @@ The platform floor is the **higher** of OCCTSwift's (12.0 / 15.0) and OCCTSwiftV
 
 ## Status
 
-This repo is in **bootstrap**. The functional code lives in [OCCTSwiftViewport's `OCCTSwiftTools` sub-product](https://github.com/gsdali/OCCTSwiftViewport/tree/main/Sources/OCCTSwiftTools); migration in progress per [SPEC.md](SPEC.md).
+`v0.1.0` shipped the wholesale migration from OCCTSwiftViewport's `OCCTSwiftTools` sub-product. Requires `OCCTSwiftViewport` ≥ `v0.51.0` (the release that drops the conflicting target name). See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release history and [SPEC.md](SPEC.md) for the public API surface and roadmap.
 
 ## License
 
