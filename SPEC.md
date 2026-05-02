@@ -51,41 +51,101 @@ The migration plan, in order:
 
 The OCCTSwiftViewport repo continues to ship the `OCCTSwiftViewport` library; the `OCCTSwiftTools` library disappears from there in the same release that this repo's `v0.1.0` ships.
 
-## Public API (target shape)
+## Public API (v0.1.0 — actual migrated surface)
 
-The exact names should follow what's already in `OCCTSwiftViewport/Sources/OCCTSwiftTools/`. The headline surface is:
+> Earlier drafts of this spec sketched a `ViewportBody.from(_:)` extension and a `CADFile` enum with `loadSTEP/loadIGES/loadSTL/loadGLTF`. That was aspirational and **does not match what was actually built** in OCCTSwiftViewport's sub-product. This section documents what was migrated; the post-v0.1.0 wishlist is parked in "Sequencing" below.
 
 ```swift
 import OCCTSwift
 import OCCTSwiftViewport
 
-extension ViewportBody {
-    /// Convert an `OCCTSwift.Shape` into a `ViewportBody` ready to render.
-    /// - Parameters:
-    ///   - shape: any B-Rep shape (solid, shell, face, wire, edge, vertex).
-    ///   - linearDeflection: meshing tolerance for triangulation. Default 0.5.
-    ///   - angularDeflection: meshing tolerance for curvature. Default 0.5.
-    ///   - color: base material colour.
-    public static func from(
-        _ shape: Shape,
-        linearDeflection: Double = 0.5,
-        angularDeflection: Double = 0.5,
-        color: SIMD3<Float> = SIMD3(0.7, 0.7, 0.7)
-    ) -> ViewportBody?
+// === Headline: file → renderable bodies ===
+
+public enum CADFileFormat: String, Sendable {
+    case step, stl, obj, brep      // No IGES, no glTF (see v0.2/v0.3 wishlist)
+    public init?(fileExtension ext: String)
 }
 
-/// One-shot file → body helpers.
-public enum CADFile {
-    public static func loadSTEP(at url: URL) throws -> [ViewportBody]
-    public static func loadIGES(at url: URL) throws -> [ViewportBody]
-    public static func loadSTL(at url: URL) throws -> ViewportBody
-    public static func loadGLTF(at url: URL) throws -> [ViewportBody]
+public struct CADBodyMetadata: Sendable {
+    public let faceIndices: [Int32]                                              // ⚑ load-bearing
+    public let edgePolylines: [(edgeIndex: Int, points: [SIMD3<Float>])]
+    public let vertices: [SIMD3<Float>]
+}
+
+public struct CADLoadResult: @unchecked Sendable {
+    public var bodies: [ViewportBody]
+    public var metadata: [String: CADBodyMetadata]
+    public var shapes: [Shape]
+    public var dimensions: [DimensionInfo]
+    public var geomTolerances: [GeomToleranceInfo]
+    public var datums: [DatumInfo]
+}
+
+public enum CADFileLoader {
+    public static func load(from url: URL, format: CADFileFormat) async throws -> CADLoadResult
+    public static func loadFromManifest(at url: URL) throws -> CADLoadResult
+    public static func shapeToBodyAndMetadata(
+        _ shape: Shape, id: String, color: SIMD4<Float>,
+        stl: Bool = false, deflection: Double? = nil, gpuTessellation: Bool = false
+    ) -> (ViewportBody?, CADBodyMetadata?)
+    public static let highQualityMeshParams: MeshParameters
+    public static let tessellationMeshParams: MeshParameters
+}
+
+// === Bridge converters (Shape sub-types → ViewportBody) ===
+
+public enum CurveConverter {
+    public static func curve2DToBody(_ curve: Curve2D, id: String, color: SIMD4<Float>) -> ViewportBody
+    public static func curve3DToBody(_ curve: Curve3D, id: String, color: SIMD4<Float>) -> ViewportBody
+}
+
+public enum SurfaceConverter {
+    public static func surfaceToGridBodies(
+        _ surface: Surface, idPrefix: String,
+        offset: SIMD3<Double> = .zero,
+        uColor: SIMD4<Float>, vColor: SIMD4<Float>,
+        uLines: Int = 10, vLines: Int = 10
+    ) -> [ViewportBody]
+}
+
+public enum WireConverter {
+    public static func wireToBody(_ wire: Wire, id: String, color: SIMD4<Float>) -> ViewportBody
+}
+
+// === Pure-viewport utilities (no OCCT dep) ===
+
+public enum BodyUtilities {
+    public static func makeMarkerSphere(at: SIMD3<Float>, radius: Float, id: String,
+                                        color: SIMD4<Float>, segments: Int = 8, rings: Int = 4) -> ViewportBody
+    public static func offsetBody(_ body: ViewportBody, dx: Float, dy: Float = 0, dz: Float = 0) -> ViewportBody
+    public static func offsetBody(_ body: inout ViewportBody, dx: Float, dy: Float = 0, dz: Float = 0)
+}
+
+// === Export (OCCT-only) ===
+
+public enum ExportFormat: String, CaseIterable, Sendable { case obj, ply, step, brep }
+
+public enum ExportManager {
+    public static func export(shapes: [Shape], format: ExportFormat,
+                              to url: URL, deflection: Double = 0.1) async throws
+}
+
+// === Manifest model (Codable, no OCCT/viewport dep) ===
+
+public struct ScriptManifest: Codable, Sendable {
+    public let version: Int
+    public let timestamp: Date
+    public let description: String?
+    public let bodies: [BodyDescriptor]
+    public let metadata: ManifestMetadata?
+    public struct BodyDescriptor: Codable, Sendable { /* id, file, format, name, roughness, metallic, color */ }
+    public struct ManifestMetadata: Codable, Sendable { /* name, revision, dates, source, tags, notes */ }
 }
 ```
 
-Plus whatever else lives in the current sub-product. **Do not invent new API in this repo.** First migrate, then add.
+### Load-bearing contract: `faceIndices`
 
-The `faceIndices` array on `ViewportBody` (per-triangle source-face index) is the linkage that OCCTSwiftAIS will read to map GPU pick results back to `TopoDS_Face` instances. Preserve it across the migration; it's load-bearing.
+`ViewportBody.faceIndices` (and its mirror `CADBodyMetadata.faceIndices`) is a per-triangle source-face index, parallel to the triangle list (`indices.count / 3 == faceIndices.count`). OCCTSwiftAIS will read this to map GPU pick results back to `TopoDS_Face` instances. **Preserve it bit-for-bit across any future change** — semantic drift here breaks pick-to-topology mapping in the layer above.
 
 ## Repo conventions
 
@@ -118,19 +178,21 @@ Pin to specific versions in `Package.resolved`; bump deliberately.
 
 ## Tests
 
+OCCTSwift ships no fixture files (its test geometry is generated at runtime), and STEP/BREP/STL samples in this repo would bloat the package. So tests **generate geometry at runtime** via `Shape.box`, `Shape.cylinder`, etc. Temp files for export round-trips go to `/tmp` — never under `Tests/`.
+
 At minimum:
 
-- Unit: `Shape.box → ViewportBody → vertex / triangle counts` round-trip.
-- Unit: `Shape.cylinder → ViewportBody`, verify `faceIndices` covers all source faces.
-- Unit: STEP/IGES/STL/GLTF load returns at least one body for known-good fixtures.
-- Integration: every public meshing tolerance combination terminates within reasonable time (no degenerate spinning).
-
-Use small fixture files in `Tests/OCCTSwiftToolsTests/Fixtures/` (STEP samples from OCCTSwift's existing test data are fair game).
+- `CADFileLoaderTests` — `Shape.box → shapeToBodyAndMetadata → ViewportBody` round-trip; verify `vertexData.count % 6 == 0`, `indices.count % 3 == 0`, `faceIndices.count == indices.count / 3`. Cylinder body's `metadata.faceIndices` covers all 3 source faces (top, bottom, lateral).
+- `BodyUtilitiesTests` — `offsetBody` shifts every vertex by the given delta; `makeMarkerSphere` produces the expected vertex count for default segments/rings.
+- `CurveConverterTests` — 2D curve maps to Y=0 plane; 3D curve preserves Z.
+- `SurfaceConverterTests` — emits 1–2 bodies with `-u`/`-v` ID suffixes; edge counts match `uLines`/`vLines`.
+- `ExportManagerTests` — round-trip box export to OBJ/STEP/BREP into `/tmp`; assert files exist and are non-empty.
+- `ScriptManifestTests` — Codable round-trip including `colorArray` ↔ `color: SIMD4<Float>` mapping.
 
 ## Sequencing — first three releases
 
-1. **v0.1.0** — Migrate the existing sub-product wholesale; everything builds and tests pass; same public API.
-2. **v0.2.0** — Add convenience: `Shape.measure(linearTolerance:)` produces face-area / edge-length reports that flow into `ViewportBody.metadata` for consumption by OCCTSwiftAIS' dimension widget.
+1. **v0.1.0** — Migrate the existing sub-product wholesale; same public surface as documented above. Blocked at the time of writing on [OCCTSwiftViewport#22](https://github.com/gsdali/OCCTSwiftViewport/issues/22) — both packages currently declare a target named `OCCTSwiftTools`, which SPM rejects as a target-name collision across the package graph.
+2. **v0.2.0** — Add convenience: `Shape.measure(linearTolerance:)` produces face-area / edge-length reports that flow into `ViewportBody.metadata` for consumption by OCCTSwiftAIS' dimension widget. Also: add IGES (`Shape.loadIGES` wrapper, if upstream OCCTSwift exposes it) and a `glTF` export hook. **These are net-new** — not present in the migrated baseline.
 3. **v0.3.0** — STEP / IGES file-import progress callbacks (large assemblies block the main thread today).
 
 After v0.3 the surface is essentially stable; sit on v0.x until OCCTSwiftAIS lands and exercises it.
