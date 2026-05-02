@@ -51,9 +51,7 @@ The migration plan, in order:
 
 The OCCTSwiftViewport repo continues to ship the `OCCTSwiftViewport` library; the `OCCTSwiftTools` library disappears from there in the same release that this repo's `v0.1.0` ships.
 
-## Public API (v0.1.0 — actual migrated surface)
-
-> Earlier drafts of this spec sketched a `ViewportBody.from(_:)` extension and a `CADFile` enum with `loadSTEP/loadIGES/loadSTL/loadGLTF`. That was aspirational and **does not match what was actually built** in OCCTSwiftViewport's sub-product. This section documents what was migrated; the post-v0.1.0 wishlist is parked in "Sequencing" below.
+## Public API (v0.2.0)
 
 ```swift
 import OCCTSwift
@@ -62,7 +60,7 @@ import OCCTSwiftViewport
 // === Headline: file → renderable bodies ===
 
 public enum CADFileFormat: String, Sendable {
-    case step, stl, obj, brep      // No IGES, no glTF (see v0.2/v0.3 wishlist)
+    case step, stl, obj, brep, iges      // glTF still import-only via Document; export via ExportManager
     public init?(fileExtension ext: String)
 }
 
@@ -70,6 +68,20 @@ public struct CADBodyMetadata: Sendable {
     public let faceIndices: [Int32]                                              // ⚑ load-bearing
     public let edgePolylines: [(edgeIndex: Int, points: [SIMD3<Float>])]
     public let vertices: [SIMD3<Float>]
+    public let measurements: ShapeMeasurements?                                  // populated when includeMeasurements: true
+}
+
+// === Measurements (v0.2.0) — for OCCTSwiftAIS dimension widget ===
+
+public struct ShapeMeasurements: Sendable {
+    public let faceAreas: [Double]      // parallel to shape.faces()
+    public let edgeLengths: [Double]    // parallel to shape.edge(at: 0..<edgeCount)
+    public var totalFaceArea: Double { get }
+    public var totalEdgeLength: Double { get }
+}
+
+extension Shape {
+    public func measure(linearTolerance: Double = 1e-6) -> ShapeMeasurements
 }
 
 public struct CADLoadResult: @unchecked Sendable {
@@ -86,7 +98,8 @@ public enum CADFileLoader {
     public static func loadFromManifest(at url: URL) throws -> CADLoadResult
     public static func shapeToBodyAndMetadata(
         _ shape: Shape, id: String, color: SIMD4<Float>,
-        stl: Bool = false, deflection: Double? = nil, gpuTessellation: Bool = false
+        stl: Bool = false, deflection: Double? = nil, gpuTessellation: Bool = false,
+        includeMeasurements: Bool = false                                        // NEW v0.2.0
     ) -> (ViewportBody?, CADBodyMetadata?)
     public static let highQualityMeshParams: MeshParameters
     public static let tessellationMeshParams: MeshParameters
@@ -123,7 +136,9 @@ public enum BodyUtilities {
 
 // === Export (OCCT-only) ===
 
-public enum ExportFormat: String, CaseIterable, Sendable { case obj, ply, step, brep }
+public enum ExportFormat: String, CaseIterable, Sendable {
+    case obj, ply, step, brep, gltf, glb     // .gltf = JSON + sibling .bin; .glb = single binary container
+}
 
 public enum ExportManager {
     public static func export(shapes: [Shape], format: ExportFormat,
@@ -186,14 +201,15 @@ At minimum:
 - `BodyUtilitiesTests` — `offsetBody` shifts every vertex by the given delta; `makeMarkerSphere` produces the expected vertex count for default segments/rings.
 - `CurveConverterTests` — 2D curve maps to Y=0 plane; 3D curve preserves Z.
 - `SurfaceConverterTests` — emits 1–2 bodies with `-u`/`-v` ID suffixes; edge counts match `uLines`/`vLines`.
-- `ExportManagerTests` — round-trip box export to OBJ/STEP/BREP into `/tmp`; assert files exist and are non-empty.
+- `ExportManagerTests` — round-trip box export to OBJ/STEP/BREP/glTF/GLB into `/tmp`; assert files exist and are non-empty.
 - `ScriptManifestTests` — Codable round-trip including `colorArray` ↔ `color: SIMD4<Float>` mapping.
+- `ShapeMeasurementsTests` — box totals match analytical surface area (62 mm² for 2×3×5) and edge length (40 mm); `includeMeasurements: true` populates `CADBodyMetadata.measurements`.
 
-## Sequencing — first three releases
+## Sequencing
 
-1. **v0.1.0** — Migrate the existing sub-product wholesale; same public surface as documented above. Blocked at the time of writing on [OCCTSwiftViewport#22](https://github.com/gsdali/OCCTSwiftViewport/issues/22) — both packages currently declare a target named `OCCTSwiftTools`, which SPM rejects as a target-name collision across the package graph.
-2. **v0.2.0** — Add convenience: `Shape.measure(linearTolerance:)` produces face-area / edge-length reports that flow into `ViewportBody.metadata` for consumption by OCCTSwiftAIS' dimension widget. Also: add IGES (`Shape.loadIGES` wrapper, if upstream OCCTSwift exposes it) and a `glTF` export hook. **These are net-new** — not present in the migrated baseline.
-3. **v0.3.0** — STEP / IGES file-import progress callbacks (large assemblies block the main thread today).
+1. **v0.1.0** *(shipped)* — Wholesale migration out of OCCTSwiftViewport's sub-product slot. See [docs/CHANGELOG.md](docs/CHANGELOG.md).
+2. **v0.2.0** *(shipped)* — `Shape.measure(linearTolerance:)` + `ShapeMeasurements` for AIS dimension widgets; IGES loader (`.iges` / `.igs` via `Shape.loadIGES` with `loadIGESRobust` fallback); glTF/GLB export (`.gltf` JSON+`.bin`, `.glb` single-binary container).
+3. **v0.3.0** *(planned)* — STEP / IGES file-import progress callbacks (large assemblies block the main thread today). Possibly: face centroid + perimeter convenience on `ShapeMeasurements` (deferred from v0.2.0 — upstream OCCTSwift hasn't wrapped `BRepGProp_Face` mass properties yet).
 
 After v0.3 the surface is essentially stable; sit on v0.x until OCCTSwiftAIS lands and exercises it.
 

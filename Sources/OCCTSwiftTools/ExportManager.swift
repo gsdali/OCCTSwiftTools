@@ -1,7 +1,7 @@
 // ExportManager.swift
 // OCCTSwiftTools
 //
-// Wraps OCCTSwift export functionality for OBJ, PLY, STEP, and BREP formats.
+// Wraps OCCTSwift export functionality for OBJ, PLY, STEP, BREP, and glTF/GLB formats.
 
 import Foundation
 import OCCTSwift
@@ -12,6 +12,10 @@ public enum ExportFormat: String, CaseIterable, Sendable {
     case ply = "PLY"
     case step = "STEP"
     case brep = "BREP"
+    /// glTF, JSON-encoded with separate `.bin` buffer files (`.gltf`).
+    case gltf = "GLTF"
+    /// glTF, single binary container (`.glb`). Same data as `.gltf`, smaller on disk.
+    case glb = "GLB"
 
     public var fileExtension: String {
         switch self {
@@ -19,6 +23,8 @@ public enum ExportFormat: String, CaseIterable, Sendable {
         case .ply: return "ply"
         case .step: return "step"
         case .brep: return "brep"
+        case .gltf: return "gltf"
+        case .glb: return "glb"
         }
     }
 }
@@ -73,6 +79,10 @@ public enum ExportManager {
             try Exporter.writeSTEP(shape: shape, to: url, modelType: .asIs)
         case .brep:
             try Exporter.writeBREP(shape: shape, to: url)
+        case .gltf:
+            try Exporter.writeGLTF(shape: shape, to: url, binary: false, deflection: deflection)
+        case .glb:
+            try Exporter.writeGLTF(shape: shape, to: url, binary: true, deflection: deflection)
         }
     }
 }

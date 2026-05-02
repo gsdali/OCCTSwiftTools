@@ -20,10 +20,21 @@ public struct CADBodyMetadata: Sendable {
     /// Deduplicated edge endpoint vertices for vertex selection.
     public let vertices: [SIMD3<Float>]
 
-    public init(faceIndices: [Int32], edgePolylines: [(edgeIndex: Int, points: [SIMD3<Float>])], vertices: [SIMD3<Float>]) {
+    /// Optional per-face area + per-edge length report. Populated only when the
+    /// caller passes `includeMeasurements: true`. AIS' dimension widget uses
+    /// this to label picked faces/edges with their scalar measurement.
+    public let measurements: ShapeMeasurements?
+
+    public init(
+        faceIndices: [Int32],
+        edgePolylines: [(edgeIndex: Int, points: [SIMD3<Float>])],
+        vertices: [SIMD3<Float>],
+        measurements: ShapeMeasurements? = nil
+    ) {
         self.faceIndices = faceIndices
         self.edgePolylines = edgePolylines
         self.vertices = vertices
+        self.measurements = measurements
     }
 }
 
@@ -54,6 +65,7 @@ public enum CADFileFormat: String, Sendable {
     case stl
     case obj
     case brep
+    case iges
 
     public init?(fileExtension ext: String) {
         switch ext.lowercased() {
@@ -65,6 +77,8 @@ public enum CADFileFormat: String, Sendable {
             self = .obj
         case "brep", "brp":
             self = .brep
+        case "iges", "igs":
+            self = .iges
         default:
             return nil
         }
@@ -91,6 +105,8 @@ public enum CADFileLoader {
             return try loadOBJ(from: url)
         case .brep:
             return try loadBREP(from: url)
+        case .iges:
+            return try loadIGES(from: url)
         }
     }
 
@@ -196,6 +212,32 @@ public enum CADFileLoader {
         return CADLoadResult(bodies: [body], metadata: metadata, shapes: [shape])
     }
 
+    // MARK: - IGES Loading
+
+    private static func loadIGES(from url: URL) throws -> CADLoadResult {
+        let shape = try Shape.loadIGES(from: url)
+        let bodyID = "iges-0"
+        let color = SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
+
+        let (body, meta) = shapeToBodyAndMetadata(shape, id: bodyID, color: color)
+        guard let body else {
+            // Fall back to the sewing/healing variant — IGES files commonly
+            // ship with gaps OCCT's basic importer won't close.
+            let robust = try Shape.loadIGESRobust(from: url)
+            let (body2, meta2) = shapeToBodyAndMetadata(robust, id: bodyID, color: color)
+            guard let body2 else {
+                return CADLoadResult(bodies: [], metadata: [:], shapes: [robust])
+            }
+            var metadata: [String: CADBodyMetadata] = [:]
+            if let meta2 { metadata[bodyID] = meta2 }
+            return CADLoadResult(bodies: [body2], metadata: metadata, shapes: [robust])
+        }
+
+        var metadata: [String: CADBodyMetadata] = [:]
+        if let meta { metadata[bodyID] = meta }
+        return CADLoadResult(bodies: [body], metadata: metadata, shapes: [shape])
+    }
+
     // MARK: - Manifest Loading
 
     /// Loads bodies from a script manifest (manifest.json + BREP files).
@@ -257,14 +299,19 @@ public enum CADFileLoader {
     /// - Parameter stl: If true, uses coarser deflection suitable for pre-tessellated STL data
     /// - Parameter deflection: Custom linear deflection override. Lower = smoother (default 0.1, STL uses 1.0).
     /// - Parameter gpuTessellation: If true, uses coarser CPU mesh (GPU PN triangles will refine).
+    /// - Parameter includeMeasurements: If true, populates `metadata.measurements`
+    ///   with per-face areas and per-edge lengths (via `Shape.measure`). Off by
+    ///   default — face-area iteration is O(faces) and not free for large assemblies.
     public static func shapeToBodyAndMetadata(
         _ shape: Shape,
         id bodyID: String,
         color rgba: SIMD4<Float>,
         stl: Bool = false,
         deflection customDeflection: Double? = nil,
-        gpuTessellation: Bool = false
+        gpuTessellation: Bool = false,
+        includeMeasurements: Bool = false
     ) -> (ViewportBody?, CADBodyMetadata?) {
+        let measurements: ShapeMeasurements? = includeMeasurements ? shape.measure() : nil
         let mesh: Mesh?
         if let customDeflection {
             mesh = shape.mesh(linearDeflection: customDeflection)
@@ -287,7 +334,8 @@ public enum CADFileLoader {
                     edges: edges, color: rgba
                 )
                 let meta = CADBodyMetadata(
-                    faceIndices: [], edgePolylines: edgePolylines, vertices: verts
+                    faceIndices: [], edgePolylines: edgePolylines, vertices: verts,
+                    measurements: measurements
                 )
                 return (body, meta)
             }
@@ -326,7 +374,8 @@ public enum CADFileLoader {
             edges: edges, faceIndices: faceIndices, color: rgba
         )
         let meta = CADBodyMetadata(
-            faceIndices: faceIndices, edgePolylines: edgePolylines, vertices: uniqueVerts
+            faceIndices: faceIndices, edgePolylines: edgePolylines, vertices: uniqueVerts,
+            measurements: measurements
         )
 
         return (body, meta)
