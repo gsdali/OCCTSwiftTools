@@ -63,4 +63,11 @@ struct CADFileLoaderTests {
         #expect(CADFileFormat(fileExtension: "BREP") == .brep)
         #expect(CADFileFormat(fileExtension: "brp") == .brep)
     }
+
+    @Test func t_igesFormatRecognition() {
+        #expect(CADFileFormat(fileExtension: "iges") == .iges)
+        #expect(CADFileFormat(fileExtension: "IGES") == .iges)
+        #expect(CADFileFormat(fileExtension: "igs") == .iges)
+        #expect(CADFileFormat(fileExtension: "IGS") == .iges)
+    }
 }

@@ -16,7 +16,46 @@ struct ExportManagerTests {
         #expect(ExportFormat.ply.fileExtension == "ply")
         #expect(ExportFormat.step.fileExtension == "step")
         #expect(ExportFormat.brep.fileExtension == "brep")
-        #expect(ExportFormat.allCases.count == 4)
+        #expect(ExportFormat.gltf.fileExtension == "gltf")
+        #expect(ExportFormat.glb.fileExtension == "glb")
+        #expect(ExportFormat.allCases.count == 6)
+    }
+
+    @Test func t_exportBoxToGLTF() async throws {
+        guard let box = Shape.box(width: 1, height: 1, depth: 1) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let url = Self.tempURL(suffix: "box.gltf")
+        defer {
+            // glTF (text) writes a sibling .bin buffer file alongside.
+            try? FileManager.default.removeItem(at: url)
+            let bin = url.deletingPathExtension().appendingPathExtension("bin")
+            try? FileManager.default.removeItem(at: bin)
+        }
+
+        try await ExportManager.export(shapes: [box], format: .gltf, to: url)
+
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        let size = attrs[.size] as? Int ?? 0
+        #expect(size > 0)
+    }
+
+    @Test func t_exportBoxToGLB() async throws {
+        guard let box = Shape.box(width: 1, height: 1, depth: 1) else {
+            Issue.record("Shape.box returned nil")
+            return
+        }
+        let url = Self.tempURL(suffix: "box.glb")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try await ExportManager.export(shapes: [box], format: .glb, to: url)
+
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+        let size = attrs[.size] as? Int ?? 0
+        #expect(size > 0, "GLB should be a single non-empty binary container")
     }
 
     @Test func t_exportBoxToOBJ() async throws {
