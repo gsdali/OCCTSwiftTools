@@ -213,7 +213,7 @@ At minimum:
 1. **v0.1.0** *(shipped)* — Wholesale migration out of OCCTSwiftViewport's sub-product slot. See [docs/CHANGELOG.md](docs/CHANGELOG.md).
 2. **v0.2.0** *(shipped)* — `Shape.measure(linearTolerance:)` + `ShapeMeasurements` for AIS dimension widgets; IGES loader (`.iges` / `.igs` via `Shape.loadIGES` with `loadIGESRobust` fallback); glTF/GLB export (`.gltf` JSON+`.bin`, `.glb` single-binary container).
 3. **v0.3.0** *(shipped)* — `ShapeMeasurements.faceCentroids` (via `Face.surfaceInertia` / `BRepGProp_Sinert`) + `facePerimeters` (via `Face.outerWire?.length`). Progress callbacks for STEP/IGES import deferred to v0.4.0 — gated on upstream OCCTSwift adding wrappers for `Message_ProgressIndicator` (none exist at v0.167.0).
-4. **v0.4.0** *(planned)* — STEP / IGES file-import progress callbacks + cancellation. **Blocked on upstream OCCTSwift** — see the tracking issue filed against `gsdali/OCCTSwift` for `Message_ProgressIndicator` wrappers.
+4. **v0.4.0** *(planned)* — STEP / IGES file-import progress callbacks + cancellation. **Blocked on upstream OCCTSwift** — tracked in [OCCTSwift#98](https://github.com/gsdali/OCCTSwift/issues/98) requesting `Message_ProgressIndicator` wrappers.
 
 After v0.4 the surface is essentially stable; sit on v0.x until OCCTSwiftAIS lands and exercises it.
 
