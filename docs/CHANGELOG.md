@@ -2,6 +2,25 @@
 
 Most recent first. Pre-1.0: free to break; deprecations documented here.
 
+## v0.5.0 — 2026-05-03
+
+**Behaviour change (pre-1.0).** Closes [#10](https://github.com/gsdali/OCCTSwiftTools/issues/10).
+
+Converges `ViewportBody.vertices` / `vertexIndices` / `CADBodyMetadata.vertices` on the **source-shape convention** so AIS' `Selection.vertices` accessor (and any other consumer) can round-trip a picked `primitiveIndex` back to a `TopoDS_Vertex` via `shape.vertex(at: primitiveIndex)`. v0.4.1's polyline-endpoint convention rendered the same number of points for typical solids but in a different order, breaking that round-trip.
+
+**What changed at runtime:**
+- `body.vertices` is now `shape.vertices()` Float-converted (was: deduplicated polyline endpoints).
+- `body.vertexIndices` is now the explicit identity array `[0, 1, …, n-1]` (was: empty, treated as identity by the renderer). Belt-and-braces against future renderer changes that drop the empty-as-identity interpretation.
+- `CADBodyMetadata.vertices` aligns with `body.vertices` — single source of truth.
+
+**No public API signature changes.** The `ViewportBody.init` and `CADBodyMetadata.init` shapes are unchanged; what's different is what populates them.
+
+**AIS coordination:** AIS v0.6.1 currently overrides `body.vertices` and `body.vertexIndices` itself in `InteractiveContext.display(_:)` to fix the round-trip. Once consumers upgrade to OCCTSwiftTools v0.5.0, AIS can drop that override — both sides will be writing identical data, so the transition is non-breaking.
+
+**Internal cleanup:** dropped the private `deduplicateVertices(from:)` helper (dead code post-convergence).
+
+**Dependencies:** unchanged (`OCCTSwift` ≥ `0.168.0`, `OCCTSwiftViewport` ≥ `0.55.0`).
+
 ## v0.4.1 — 2026-05-03
 
 Wires AIS edge + vertex GPU picking through. OCCTSwiftViewport v0.55.0 added the renderer-side edge/vertex pick pipelines ([viewport#24](https://github.com/gsdali/OCCTSwiftViewport/issues/24)), but their `body.edgeIndices` / `body.vertices` gates meant our bodies showed up as face-pickable only. Closes [#8](https://github.com/gsdali/OCCTSwiftTools/issues/8).
