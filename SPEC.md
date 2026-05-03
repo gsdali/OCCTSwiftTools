@@ -51,7 +51,7 @@ The migration plan, in order:
 
 The OCCTSwiftViewport repo continues to ship the `OCCTSwiftViewport` library; the `OCCTSwiftTools` library disappears from there in the same release that this repo's `v0.1.0` ships.
 
-## Public API (v0.2.0)
+## Public API (v0.3.0)
 
 ```swift
 import OCCTSwift
@@ -71,13 +71,16 @@ public struct CADBodyMetadata: Sendable {
     public let measurements: ShapeMeasurements?                                  // populated when includeMeasurements: true
 }
 
-// === Measurements (v0.2.0) — for OCCTSwiftAIS dimension widget ===
+// === Measurements — for OCCTSwiftAIS dimension widget ===
 
 public struct ShapeMeasurements: Sendable {
-    public let faceAreas: [Double]      // parallel to shape.faces()
-    public let edgeLengths: [Double]    // parallel to shape.edge(at: 0..<edgeCount)
+    public let faceAreas: [Double]                  // parallel to shape.faces()
+    public let edgeLengths: [Double]                // parallel to shape.edge(at: 0..<edgeCount)
+    public let faceCentroids: [SIMD3<Double>]       // v0.3.0 — parallel to faceAreas
+    public let facePerimeters: [Double?]            // v0.3.0 — outer-wire length, nil if unavailable
     public var totalFaceArea: Double { get }
     public var totalEdgeLength: Double { get }
+    public var totalFacePerimeter: Double { get }   // v0.3.0 — sums non-nil entries
 }
 
 extension Shape {
@@ -203,15 +206,16 @@ At minimum:
 - `SurfaceConverterTests` — emits 1–2 bodies with `-u`/`-v` ID suffixes; edge counts match `uLines`/`vLines`.
 - `ExportManagerTests` — round-trip box export to OBJ/STEP/BREP/glTF/GLB into `/tmp`; assert files exist and are non-empty.
 - `ScriptManifestTests` — Codable round-trip including `colorArray` ↔ `color: SIMD4<Float>` mapping.
-- `ShapeMeasurementsTests` — box totals match analytical surface area (62 mm² for 2×3×5) and edge length (40 mm); `includeMeasurements: true` populates `CADBodyMetadata.measurements`.
+- `ShapeMeasurementsTests` — box totals match analytical surface area (62 mm² for 2×3×5), edge length (40 mm), and face perimeter (80 mm); face centroids lie inside their face bounding boxes; cylinder cap centroids are on-axis; `includeMeasurements: true` populates `CADBodyMetadata.measurements`.
 
 ## Sequencing
 
 1. **v0.1.0** *(shipped)* — Wholesale migration out of OCCTSwiftViewport's sub-product slot. See [docs/CHANGELOG.md](docs/CHANGELOG.md).
 2. **v0.2.0** *(shipped)* — `Shape.measure(linearTolerance:)` + `ShapeMeasurements` for AIS dimension widgets; IGES loader (`.iges` / `.igs` via `Shape.loadIGES` with `loadIGESRobust` fallback); glTF/GLB export (`.gltf` JSON+`.bin`, `.glb` single-binary container).
-3. **v0.3.0** *(planned)* — STEP / IGES file-import progress callbacks (large assemblies block the main thread today). Possibly: face centroid + perimeter convenience on `ShapeMeasurements` (deferred from v0.2.0 — upstream OCCTSwift hasn't wrapped `BRepGProp_Face` mass properties yet).
+3. **v0.3.0** *(shipped)* — `ShapeMeasurements.faceCentroids` (via `Face.surfaceInertia` / `BRepGProp_Sinert`) + `facePerimeters` (via `Face.outerWire?.length`). Progress callbacks for STEP/IGES import deferred to v0.4.0 — gated on upstream OCCTSwift adding wrappers for `Message_ProgressIndicator` (none exist at v0.167.0).
+4. **v0.4.0** *(planned)* — STEP / IGES file-import progress callbacks + cancellation. **Blocked on upstream OCCTSwift** — see the tracking issue filed against `gsdali/OCCTSwift` for `Message_ProgressIndicator` wrappers.
 
-After v0.3 the surface is essentially stable; sit on v0.x until OCCTSwiftAIS lands and exercises it.
+After v0.4 the surface is essentially stable; sit on v0.x until OCCTSwiftAIS lands and exercises it.
 
 ## Ecosystem context to read before coding
 

@@ -1,9 +1,11 @@
 // ShapeMeasurements.swift
 // OCCTSwiftTools
 //
-// Per-face area + per-edge length reports for OCCTSwiftAIS' dimension widget.
+// Per-face area / centroid / perimeter + per-edge length reports for
+// OCCTSwiftAIS' dimension widget.
 
 import OCCTSwift
+import simd
 
 /// Measurements computed from a `Shape`'s topology, indexed parallel to its
 /// face / edge enumeration so AIS-layer consumers can resolve a picked
@@ -15,9 +17,29 @@ public struct ShapeMeasurements: Sendable {
     /// `edgeLengths[i]` is the arc length of `shape.edge(at: i)` (0..<shape.edgeCount).
     public let edgeLengths: [Double]
 
-    public init(faceAreas: [Double], edgeLengths: [Double]) {
+    /// `faceCentroids[i]` is the surface center-of-mass of `shape.faces()[i]`,
+    /// computed via `BRepGProp_Sinert`.
+    public let faceCentroids: [SIMD3<Double>]
+
+    /// `facePerimeters[i]` is the outer-wire length of `shape.faces()[i]`, or
+    /// `nil` if the face has no outer wire or wire length is unavailable.
+    ///
+    /// **Caveat**: this is the *outer-boundary* length, not a parametric arc
+    /// length. For trimmed faces (a face with internal holes), this excludes
+    /// the inner-wire perimeters — usually what dimension widgets want, but
+    /// worth knowing.
+    public let facePerimeters: [Double?]
+
+    public init(
+        faceAreas: [Double],
+        edgeLengths: [Double],
+        faceCentroids: [SIMD3<Double>] = [],
+        facePerimeters: [Double?] = []
+    ) {
         self.faceAreas = faceAreas
         self.edgeLengths = edgeLengths
+        self.faceCentroids = faceCentroids
+        self.facePerimeters = facePerimeters
     }
 
     /// Sum of all face areas — useful as a quick total-surface metric.
@@ -25,14 +47,25 @@ public struct ShapeMeasurements: Sendable {
 
     /// Sum of all edge lengths.
     public var totalEdgeLength: Double { edgeLengths.reduce(0, +) }
+
+    /// Sum of all available face perimeters (`nil` entries are skipped).
+    public var totalFacePerimeter: Double {
+        facePerimeters.reduce(0) { acc, p in acc + (p ?? 0) }
+    }
 }
 
 extension Shape {
-    /// Compute per-face area + per-edge length for this shape.
+    /// Compute per-face area / centroid / perimeter + per-edge length for this shape.
     /// - Parameter linearTolerance: tolerance forwarded to `Face.area(tolerance:)`.
     ///   Defaults to OCCT's `1e-6` — tighten only if you hit precision issues.
     public func measure(linearTolerance: Double = 1e-6) -> ShapeMeasurements {
-        let faceAreas = faces().map { $0.area(tolerance: linearTolerance) }
+        let faceList = faces()
+        let faceAreas = faceList.map { $0.area(tolerance: linearTolerance) }
+        let faceCentroids = faceList.map { face -> SIMD3<Double> in
+            let s = face.surfaceInertia
+            return SIMD3(s.centerX, s.centerY, s.centerZ)
+        }
+        let facePerimeters: [Double?] = faceList.map { $0.outerWire?.length }
 
         let count = edgeCount
         var edgeLengths: [Double] = []
@@ -41,6 +74,11 @@ extension Shape {
             edgeLengths.append(edge(at: i)?.length ?? 0)
         }
 
-        return ShapeMeasurements(faceAreas: faceAreas, edgeLengths: edgeLengths)
+        return ShapeMeasurements(
+            faceAreas: faceAreas,
+            edgeLengths: edgeLengths,
+            faceCentroids: faceCentroids,
+            facePerimeters: facePerimeters
+        )
     }
 }
