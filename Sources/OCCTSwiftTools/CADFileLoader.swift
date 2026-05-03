@@ -89,16 +89,29 @@ public enum CADFileFormat: String, Sendable {
 public enum CADFileLoader {
 
     /// Loads a CAD file and returns viewport bodies with selection metadata.
-    public static func load(from url: URL, format: CADFileFormat) async throws -> CADLoadResult {
+    /// - Parameter progress: optional progress + cancellation observer. Honored
+    ///   by `.step` and `.iges` formats only — STL/OBJ/BREP loaders are
+    ///   single-call upstream and don't surface progress. Pass an
+    ///   `ImportProgressClosure` for closure-style usage. If `progress.shouldCancel()`
+    ///   returns `true`, the import throws `OCCTSwift.ImportError.cancelled`.
+    public static func load(
+        from url: URL,
+        format: CADFileFormat,
+        progress: ImportProgress? = nil
+    ) async throws -> CADLoadResult {
         try await Task.detached {
-            try loadSync(from: url, format: format)
+            try loadSync(from: url, format: format, progress: progress)
         }.value
     }
 
-    private static func loadSync(from url: URL, format: CADFileFormat) throws -> CADLoadResult {
+    private static func loadSync(
+        from url: URL,
+        format: CADFileFormat,
+        progress: ImportProgress?
+    ) throws -> CADLoadResult {
         switch format {
         case .step:
-            return try loadSTEP(from: url)
+            return try loadSTEP(from: url, progress: progress)
         case .stl:
             return try loadSTL(from: url)
         case .obj:
@@ -106,14 +119,14 @@ public enum CADFileLoader {
         case .brep:
             return try loadBREP(from: url)
         case .iges:
-            return try loadIGES(from: url)
+            return try loadIGES(from: url, progress: progress)
         }
     }
 
     // MARK: - STEP Loading
 
-    private static func loadSTEP(from url: URL) throws -> CADLoadResult {
-        let doc = try Document.load(from: url)
+    private static func loadSTEP(from url: URL, progress: ImportProgress? = nil) throws -> CADLoadResult {
+        let doc = try Document.load(from: url, progress: progress)
         let shapesWithColors = doc.shapesWithColors()
 
         var bodies: [ViewportBody] = []
@@ -214,16 +227,17 @@ public enum CADFileLoader {
 
     // MARK: - IGES Loading
 
-    private static func loadIGES(from url: URL) throws -> CADLoadResult {
-        let shape = try Shape.loadIGES(from: url)
+    private static func loadIGES(from url: URL, progress: ImportProgress? = nil) throws -> CADLoadResult {
+        let shape = try Shape.loadIGES(from: url, progress: progress)
         let bodyID = "iges-0"
         let color = SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
 
         let (body, meta) = shapeToBodyAndMetadata(shape, id: bodyID, color: color)
         guard let body else {
             // Fall back to the sewing/healing variant — IGES files commonly
-            // ship with gaps OCCT's basic importer won't close.
-            let robust = try Shape.loadIGESRobust(from: url)
+            // ship with gaps OCCT's basic importer won't close. The fallback
+            // re-imports, so progress will pass through 0..1 a second time.
+            let robust = try Shape.loadIGESRobust(from: url, progress: progress)
             let (body2, meta2) = shapeToBodyAndMetadata(robust, id: bodyID, color: color)
             guard let body2 else {
                 return CADLoadResult(bodies: [], metadata: [:], shapes: [robust])
