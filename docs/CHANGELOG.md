@@ -2,6 +2,37 @@
 
 Most recent first. Pre-1.0: free to break; deprecations documented here.
 
+## v0.4.0 — 2026-05-03
+
+STEP/IGES import progress + cancellation, finally. Upstream OCCTSwift v0.168.0 wrapped `Message_ProgressIndicator` (closing [OCCTSwift#98](https://github.com/gsdali/OCCTSwift/issues/98)) — this release plumbs that through the bridge.
+
+**New:**
+
+- **`CADFileLoader.load(from:format:progress:)`** — optional `progress: ImportProgress?` parameter (default `nil` — backwards compatible). Honored by `.step` and `.iges` formats only; STL/OBJ/BREP loaders are single-call upstream and don't surface progress.
+- **`ImportProgressClosure`** — closure-backed `ImportProgress` adapter so callers don't need to write a one-shot subclass:
+
+  ```swift
+  let result = try await CADFileLoader.load(
+      from: url, format: .step,
+      progress: ImportProgressClosure(
+          cancelCheck: { Task.isCancelled },
+          progress: { fraction, step in
+              Task { @MainActor in progressBar.setValue(fraction) }
+          }
+      )
+  )
+  ```
+
+  `progress` callbacks fire on the importer's thread (a background thread when launched via `CADFileLoader.load`); UI updates must hop to the main actor explicitly.
+
+**Cancellation:** Returning `true` from `progress.shouldCancel()` causes the import to throw `OCCTSwift.ImportError.cancelled` at the next OCCT progress boundary. Caller catches that to distinguish cancel from a real failure.
+
+**IGES fallback note:** When `Shape.loadIGES` succeeds but `shapeToBodyAndMetadata` returns nil, the loader retries with `Shape.loadIGESRobust` (sewing/healing pass). Both passes use the same `progress` observer, so progress will sweep `0..1` twice in that scenario.
+
+**Dependencies bumped:**
+- `OCCTSwift` ≥ `0.168.0` *(was 0.167.0)* — required for `ImportProgress` protocol.
+- `OCCTSwiftViewport` ≥ `0.51.0` — unchanged.
+
 ## v0.3.0 — 2026-05-03
 
 Two more measurement primitives for OCCTSwiftAIS' dimension widget. The originally-planned v0.3.0 headline (STEP/IGES import progress callbacks) is **deferred to v0.4.0** — upstream OCCTSwift v0.167.0 doesn't wrap `Message_ProgressIndicator`, so we have nothing to bridge. Tracked in [OCCTSwift#98](https://github.com/gsdali/OCCTSwift/issues/98).

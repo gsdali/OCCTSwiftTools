@@ -6,7 +6,7 @@ This document is a brief for the next agent (Claude or human) picking up impleme
 
 The bridge product between two intentionally-decoupled siblings:
 
-- **[OCCTSwift](https://github.com/gsdali/OCCTSwift)** — Swift wrapper around OpenCASCADE's modeling kernel. No Metal, no rendering. Currently shipping `v0.167.0` against OCCT 8.0.0-beta1 with macOS / iOS / visionOS / tvOS slices.
+- **[OCCTSwift](https://github.com/gsdali/OCCTSwift)** — Swift wrapper around OpenCASCADE's modeling kernel. No Metal, no rendering. Currently shipping `v0.168.0` against OCCT 8.0.0-beta1 with macOS / iOS / visionOS / tvOS slices.
 - **[OCCTSwiftViewport](https://github.com/gsdali/OCCTSwiftViewport)** — Pure-Metal viewport renderer. No OCCT dependency. Renders abstract `ViewportBody` objects.
 
 `OCCTSwiftTools` is the only library that depends on **both**. It converts `OCCTSwift.Shape` (B-Rep topology + meshable surfaces) into `OCCTSwiftViewport.ViewportBody` (vertex / index / face-id buffers consumable by the Metal renderer), plus CAD file I/O wrappers that need both kernels working together.
@@ -51,7 +51,7 @@ The migration plan, in order:
 
 The OCCTSwiftViewport repo continues to ship the `OCCTSwiftViewport` library; the `OCCTSwiftTools` library disappears from there in the same release that this repo's `v0.1.0` ships.
 
-## Public API (v0.3.0)
+## Public API (v0.4.0)
 
 ```swift
 import OCCTSwift
@@ -97,15 +97,33 @@ public struct CADLoadResult: @unchecked Sendable {
 }
 
 public enum CADFileLoader {
-    public static func load(from url: URL, format: CADFileFormat) async throws -> CADLoadResult
+    public static func load(
+        from url: URL, format: CADFileFormat,
+        progress: ImportProgress? = nil                                          // NEW v0.4.0
+    ) async throws -> CADLoadResult
     public static func loadFromManifest(at url: URL) throws -> CADLoadResult
     public static func shapeToBodyAndMetadata(
         _ shape: Shape, id: String, color: SIMD4<Float>,
         stl: Bool = false, deflection: Double? = nil, gpuTessellation: Bool = false,
-        includeMeasurements: Bool = false                                        // NEW v0.2.0
+        includeMeasurements: Bool = false                                        // v0.2.0
     ) -> (ViewportBody?, CADBodyMetadata?)
     public static let highQualityMeshParams: MeshParameters
     public static let tessellationMeshParams: MeshParameters
+}
+
+// === Import progress (v0.4.0) — re-exposes OCCTSwift.ImportProgress ===
+
+// `ImportProgress` is the upstream OCCTSwift protocol. Honored by `.step` and
+// `.iges` formats only — STL/OBJ/BREP loaders are single-call upstream and
+// don't surface progress. Returning `true` from `shouldCancel()` causes the
+// import to throw `OCCTSwift.ImportError.cancelled` at the next boundary.
+
+public final class ImportProgressClosure: ImportProgress {
+    public init(
+        cancelCheck: @escaping @Sendable () -> Bool = { false },
+        progress: @escaping @Sendable (Double, String) -> Void
+    )
+    // Conforms to ImportProgress.
 }
 
 // === Bridge converters (Shape sub-types → ViewportBody) ===
@@ -188,7 +206,7 @@ This repo does **not** ship a binary. It depends on OCCTSwift (which ships `OCCT
 
 ```swift
 // Package.swift dependencies
-.package(url: "https://github.com/gsdali/OCCTSwift.git",         from: "0.167.0"),
+.package(url: "https://github.com/gsdali/OCCTSwift.git",         from: "0.168.0"),
 .package(url: "https://github.com/gsdali/OCCTSwiftViewport.git", from: "0.51.0"),
 ```
 
@@ -213,7 +231,7 @@ At minimum:
 1. **v0.1.0** *(shipped)* — Wholesale migration out of OCCTSwiftViewport's sub-product slot. See [docs/CHANGELOG.md](docs/CHANGELOG.md).
 2. **v0.2.0** *(shipped)* — `Shape.measure(linearTolerance:)` + `ShapeMeasurements` for AIS dimension widgets; IGES loader (`.iges` / `.igs` via `Shape.loadIGES` with `loadIGESRobust` fallback); glTF/GLB export (`.gltf` JSON+`.bin`, `.glb` single-binary container).
 3. **v0.3.0** *(shipped)* — `ShapeMeasurements.faceCentroids` (via `Face.surfaceInertia` / `BRepGProp_Sinert`) + `facePerimeters` (via `Face.outerWire?.length`). Progress callbacks for STEP/IGES import deferred to v0.4.0 — gated on upstream OCCTSwift adding wrappers for `Message_ProgressIndicator` (none exist at v0.167.0).
-4. **v0.4.0** *(planned)* — STEP / IGES file-import progress callbacks + cancellation. **Blocked on upstream OCCTSwift** — tracked in [OCCTSwift#98](https://github.com/gsdali/OCCTSwift/issues/98) requesting `Message_ProgressIndicator` wrappers.
+4. **v0.4.0** *(shipped)* — STEP/IGES import progress + cancellation, plumbed from upstream `OCCTSwift.ImportProgress` (added in OCCTSwift v0.168.0, closed [OCCTSwift#98](https://github.com/gsdali/OCCTSwift/issues/98)). `CADFileLoader.load(from:format:progress:)` and an `ImportProgressClosure` ergonomic adapter. STL/OBJ/BREP unchanged — those upstream loaders don't surface progress.
 
 After v0.4 the surface is essentially stable; sit on v0.x until OCCTSwiftAIS lands and exercises it.
 
