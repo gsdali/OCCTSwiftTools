@@ -2,6 +2,22 @@
 
 Most recent first. Pre-1.0: free to break; deprecations documented here.
 
+## v0.4.1 — 2026-05-03
+
+Wires AIS edge + vertex GPU picking through. OCCTSwiftViewport v0.55.0 added the renderer-side edge/vertex pick pipelines ([viewport#24](https://github.com/gsdali/OCCTSwiftViewport/issues/24)), but their `body.edgeIndices` / `body.vertices` gates meant our bodies showed up as face-pickable only. Closes [#8](https://github.com/gsdali/OCCTSwiftTools/issues/8).
+
+**Behaviour change in `CADFileLoader.shapeToBodyAndMetadata`:**
+
+- **`ViewportBody.edgeIndices`** is now populated by flattening `metadata.edgePolylines` into per-segment indices. A polyline of N points contributes (N − 1) segments, each tagged with the source edge's index. Picked segment → `TopoDS_Edge`.
+- **`ViewportBody.vertices`** is now populated with the deduplicated edge endpoints (same data as `metadata.vertices`).
+- **`ViewportBody.vertexIndices`** stays empty — the renderer treats empty as identity (the pick result's `primitiveIndex` is the vertex index directly), so emitting a `[0, 1, 2, …]` array would be wasted bytes.
+
+The data extraction (`extractEdgePolylines`, `deduplicateVertices`) was already running on every body, so this is a near-free wiring change. No public API surface change; existing call sites get the new pick fields populated with no opt-in required.
+
+**Dependencies bumped:**
+- `OCCTSwiftViewport` ≥ **0.55.0** *(was 0.51.0)* — required for the new `edgeIndices` / `vertices` / `vertexIndices` parameters on `ViewportBody.init`.
+- `OCCTSwift` ≥ `0.168.0` — unchanged.
+
 ## v0.4.0 — 2026-05-03
 
 STEP/IGES import progress + cancellation, finally. Upstream OCCTSwift v0.168.0 wrapped `Message_ProgressIndicator` (closing [OCCTSwift#98](https://github.com/gsdali/OCCTSwift/issues/98)) — this release plumbs that through the bridge.

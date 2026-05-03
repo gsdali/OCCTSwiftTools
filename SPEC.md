@@ -51,7 +51,7 @@ The migration plan, in order:
 
 The OCCTSwiftViewport repo continues to ship the `OCCTSwiftViewport` library; the `OCCTSwiftTools` library disappears from there in the same release that this repo's `v0.1.0` ships.
 
-## Public API (v0.4.0)
+## Public API (v0.4.1)
 
 ```swift
 import OCCTSwift
@@ -179,9 +179,15 @@ public struct ScriptManifest: Codable, Sendable {
 }
 ```
 
-### Load-bearing contract: `faceIndices`
+### Load-bearing contracts: pick-index arrays
 
-`ViewportBody.faceIndices` (and its mirror `CADBodyMetadata.faceIndices`) is a per-triangle source-face index, parallel to the triangle list (`indices.count / 3 == faceIndices.count`). OCCTSwiftAIS will read this to map GPU pick results back to `TopoDS_Face` instances. **Preserve it bit-for-bit across any future change** — semantic drift here breaks pick-to-topology mapping in the layer above.
+Three pairs of arrays on `ViewportBody` map GPU pick results back to B-Rep topology for OCCTSwiftAIS' selection layer. Preserve their semantics bit-for-bit:
+
+- **`faceIndices: [Int32]`** — per-triangle source-face index, parallel to the triangle list (`indices.count / 3 == faceIndices.count`). Mirrored by `CADBodyMetadata.faceIndices`. Picked triangle → `TopoDS_Face`.
+- **`edgeIndices: [Int32]`** *(populated since v0.4.1)* — per-segment source-edge index, parallel to the flattened line-segment list. A polyline of N points contributes (N − 1) segments; each segment carries its source edge's index. Picked segment → `TopoDS_Edge`. Source data is `CADBodyMetadata.edgePolylines` (polyline-keyed); `flattenEdgeIndices(_:)` produces the segment-keyed array.
+- **`vertices: [SIMD3<Float>]`** + **`vertexIndices: [Int32]`** *(populated since v0.4.1)* — point sprites for the vertex-pick pass. We pass `CADBodyMetadata.vertices` (deduplicated edge endpoints) directly as `vertices` and leave `vertexIndices` empty (the renderer treats empty as identity, so the pick result's `primitiveIndex` is the vertex index).
+
+Semantic drift on any of these breaks pick-to-topology mapping one layer up. Wiring lives in `CADFileLoader.shapeToBodyAndMetadata`.
 
 ## Repo conventions
 
@@ -207,7 +213,7 @@ This repo does **not** ship a binary. It depends on OCCTSwift (which ships `OCCT
 ```swift
 // Package.swift dependencies
 .package(url: "https://github.com/gsdali/OCCTSwift.git",         from: "0.168.0"),
-.package(url: "https://github.com/gsdali/OCCTSwiftViewport.git", from: "0.51.0"),
+.package(url: "https://github.com/gsdali/OCCTSwiftViewport.git", from: "0.55.0"),
 ```
 
 Pin to specific versions in `Package.resolved`; bump deliberately.
@@ -232,6 +238,7 @@ At minimum:
 2. **v0.2.0** *(shipped)* — `Shape.measure(linearTolerance:)` + `ShapeMeasurements` for AIS dimension widgets; IGES loader (`.iges` / `.igs` via `Shape.loadIGES` with `loadIGESRobust` fallback); glTF/GLB export (`.gltf` JSON+`.bin`, `.glb` single-binary container).
 3. **v0.3.0** *(shipped)* — `ShapeMeasurements.faceCentroids` (via `Face.surfaceInertia` / `BRepGProp_Sinert`) + `facePerimeters` (via `Face.outerWire?.length`). Progress callbacks for STEP/IGES import deferred to v0.4.0 — gated on upstream OCCTSwift adding wrappers for `Message_ProgressIndicator` (none exist at v0.167.0).
 4. **v0.4.0** *(shipped)* — STEP/IGES import progress + cancellation, plumbed from upstream `OCCTSwift.ImportProgress` (added in OCCTSwift v0.168.0, closed [OCCTSwift#98](https://github.com/gsdali/OCCTSwift/issues/98)). `CADFileLoader.load(from:format:progress:)` and an `ImportProgressClosure` ergonomic adapter. STL/OBJ/BREP unchanged — those upstream loaders don't surface progress.
+5. **v0.4.1** *(shipped)* — populate `ViewportBody.edgeIndices` / `vertices` for AIS edge + vertex GPU picking (closes [#8](https://github.com/gsdali/OCCTSwiftTools/issues/8)). Pure data-wiring change in `shapeToBodyAndMetadata` — no API surface change. Floor bumped to OCCTSwiftViewport ≥ 0.55.0 for the new init parameters.
 
 After v0.4 the surface is essentially stable; sit on v0.x until OCCTSwiftAIS lands and exercises it.
 

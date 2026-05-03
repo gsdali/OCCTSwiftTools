@@ -343,9 +343,13 @@ public enum CADFileLoader {
             if !edgePolylines.isEmpty {
                 let edges = edgePolylines.map { $0.points }
                 let verts = deduplicateVertices(from: edgePolylines)
+                let edgeIndices = flattenEdgeIndices(edgePolylines)
                 let body = ViewportBody(
                     id: bodyID, vertexData: [], indices: [],
-                    edges: edges, color: rgba
+                    edges: edges,
+                    edgeIndices: edgeIndices,
+                    vertices: verts,
+                    color: rgba
                 )
                 let meta = CADBodyMetadata(
                     faceIndices: [], edgePolylines: edgePolylines, vertices: verts,
@@ -382,10 +386,14 @@ public enum CADFileLoader {
         let edgePolylines = extractEdgePolylines(from: shape)
         let edges = edgePolylines.map { $0.points }
         let uniqueVerts = deduplicateVertices(from: edgePolylines)
+        let edgeIndices = flattenEdgeIndices(edgePolylines)
 
         let body = ViewportBody(
             id: bodyID, vertexData: vertexData, indices: indices,
-            edges: edges, faceIndices: faceIndices, color: rgba
+            edges: edges, faceIndices: faceIndices,
+            edgeIndices: edgeIndices,
+            vertices: uniqueVerts,
+            color: rgba
         )
         let meta = CADBodyMetadata(
             faceIndices: faceIndices, edgePolylines: edgePolylines, vertices: uniqueVerts,
@@ -393,6 +401,26 @@ public enum CADFileLoader {
         )
 
         return (body, meta)
+    }
+
+    // MARK: - Edge Index Flattening (v0.4.1)
+
+    /// Flatten polyline-keyed edge indices into the per-segment array
+    /// `ViewportBody.edgeIndices` expects. A polyline of N points contributes
+    /// (N - 1) line segments, each tagged with the source edge's index.
+    /// Result length equals total flat segment count, matching the renderer's
+    /// flattened-line layout used by the GPU edge-pick pass.
+    private static func flattenEdgeIndices(
+        _ edgePolylines: [(edgeIndex: Int, points: [SIMD3<Float>])]
+    ) -> [Int32] {
+        var result: [Int32] = []
+        for (edgeIndex, points) in edgePolylines {
+            let segments = max(points.count - 1, 0)
+            if segments > 0 {
+                result.append(contentsOf: repeatElement(Int32(edgeIndex), count: segments))
+            }
+        }
+        return result
     }
 
     // MARK: - Edge Extraction

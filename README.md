@@ -55,7 +55,7 @@ The platform floor is the **higher** of OCCTSwift's (12.0 / 15.0) and OCCTSwiftV
 
 ## Status
 
-`v0.1.0` shipped the wholesale migration from OCCTSwiftViewport's `OCCTSwiftTools` sub-product. Requires `OCCTSwiftViewport` ≥ `v0.51.0` (the release that drops the conflicting target name). See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release history and [SPEC.md](SPEC.md) for the public API surface and roadmap.
+Active. Requires `OCCTSwift` ≥ `v0.168.0` (for `ImportProgress`) and `OCCTSwiftViewport` ≥ `v0.55.0` (for the GPU edge/vertex pick fields populated by `shapeToBodyAndMetadata`). See [docs/CHANGELOG.md](docs/CHANGELOG.md) for release history and [SPEC.md](SPEC.md) for the public API surface and roadmap.
 
 ## License
 
