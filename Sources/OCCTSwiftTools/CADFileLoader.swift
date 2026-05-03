@@ -342,17 +342,19 @@ public enum CADFileLoader {
             let edgePolylines = extractEdgePolylines(from: shape)
             if !edgePolylines.isEmpty {
                 let edges = edgePolylines.map { $0.points }
-                let verts = deduplicateVertices(from: edgePolylines)
+                let pickVerts = sourceShapeVertexPickData(from: shape)
                 let edgeIndices = flattenEdgeIndices(edgePolylines)
                 let body = ViewportBody(
                     id: bodyID, vertexData: [], indices: [],
                     edges: edges,
                     edgeIndices: edgeIndices,
-                    vertices: verts,
+                    vertices: pickVerts.positions,
+                    vertexIndices: pickVerts.indices,
                     color: rgba
                 )
                 let meta = CADBodyMetadata(
-                    faceIndices: [], edgePolylines: edgePolylines, vertices: verts,
+                    faceIndices: [], edgePolylines: edgePolylines,
+                    vertices: pickVerts.positions,
                     measurements: measurements
                 )
                 return (body, meta)
@@ -385,18 +387,20 @@ public enum CADFileLoader {
 
         let edgePolylines = extractEdgePolylines(from: shape)
         let edges = edgePolylines.map { $0.points }
-        let uniqueVerts = deduplicateVertices(from: edgePolylines)
+        let pickVerts = sourceShapeVertexPickData(from: shape)
         let edgeIndices = flattenEdgeIndices(edgePolylines)
 
         let body = ViewportBody(
             id: bodyID, vertexData: vertexData, indices: indices,
             edges: edges, faceIndices: faceIndices,
             edgeIndices: edgeIndices,
-            vertices: uniqueVerts,
+            vertices: pickVerts.positions,
+            vertexIndices: pickVerts.indices,
             color: rgba
         )
         let meta = CADBodyMetadata(
-            faceIndices: faceIndices, edgePolylines: edgePolylines, vertices: uniqueVerts,
+            faceIndices: faceIndices, edgePolylines: edgePolylines,
+            vertices: pickVerts.positions,
             measurements: measurements
         )
 
@@ -442,26 +446,25 @@ public enum CADFileLoader {
         return result
     }
 
-    // MARK: - Vertex Deduplication
+    // MARK: - Vertex Pick Data (v0.5.0 — source-shape convention)
 
-    private static func deduplicateVertices(
-        from edgePolylines: [(edgeIndex: Int, points: [SIMD3<Float>])]
-    ) -> [SIMD3<Float>] {
-        let tolerance: Float = 1e-5
-        var unique: [SIMD3<Float>] = []
-
-        for polyline in edgePolylines {
-            guard let first = polyline.points.first, let last = polyline.points.last else { continue }
-            for endpoint in [first, last] {
-                let isDuplicate = unique.contains { existing in
-                    simd_distance(existing, endpoint) < tolerance
-                }
-                if !isDuplicate {
-                    unique.append(endpoint)
-                }
-            }
+    /// Collect source-shape vertices and their identity index array for the
+    /// vertex-pick pass. Indexing matches `shape.vertices()` so consumers can
+    /// round-trip a picked `primitiveIndex` back to a `TopoDS_Vertex` via
+    /// `shape.vertex(at: primitiveIndex)`.
+    ///
+    /// Replaces v0.4.1's polyline-endpoint-deduplication approach, which
+    /// rendered the same number of points for typical solids but in a
+    /// different order — breaking AIS' `Selection.vertices` round-trip.
+    /// Closes [#10](https://github.com/gsdali/OCCTSwiftTools/issues/10).
+    private static func sourceShapeVertexPickData(
+        from shape: Shape
+    ) -> (positions: [SIMD3<Float>], indices: [Int32]) {
+        let sourceVerts = shape.vertices()
+        let positions = sourceVerts.map {
+            SIMD3<Float>(Float($0.x), Float($0.y), Float($0.z))
         }
-
-        return unique
+        let indices = (0..<sourceVerts.count).map(Int32.init)
+        return (positions, indices)
     }
 }
