@@ -1,44 +1,21 @@
 // CADFileLoader.swift
 // OCCTSwiftTools
 //
-// Bridges OCCTSwift geometry to ViewportBody + metadata for sub-body selection.
-// Supports STEP, STL, OBJ, and BREP file formats.
+// Bridge layer: wraps OCCTSwiftIO's headless `ShapeLoader` to produce
+// `ViewportBody` + `CADBodyMetadata` from CAD files. The file-format,
+// progress, exporter, and manifest types live in `OCCTSwiftIO`; this file
+// owns only the Shape → Body bridge logic.
 
 import Foundation
 import simd
 import OCCTSwift
 import OCCTSwiftViewport
+@_exported import OCCTSwiftIO
 
-/// Metadata extracted from OCCTSwift for sub-body selection (face, edge, vertex).
-public struct CADBodyMetadata: Sendable {
-    /// Per-triangle face index (parallel to ViewportBody.faceIndices).
-    public let faceIndices: [Int32]
-
-    /// Edge polylines with their edge indices for edge selection.
-    public let edgePolylines: [(edgeIndex: Int, points: [SIMD3<Float>])]
-
-    /// Deduplicated edge endpoint vertices for vertex selection.
-    public let vertices: [SIMD3<Float>]
-
-    /// Optional per-face area + per-edge length report. Populated only when the
-    /// caller passes `includeMeasurements: true`. AIS' dimension widget uses
-    /// this to label picked faces/edges with their scalar measurement.
-    public let measurements: ShapeMeasurements?
-
-    public init(
-        faceIndices: [Int32],
-        edgePolylines: [(edgeIndex: Int, points: [SIMD3<Float>])],
-        vertices: [SIMD3<Float>],
-        measurements: ShapeMeasurements? = nil
-    ) {
-        self.faceIndices = faceIndices
-        self.edgePolylines = edgePolylines
-        self.vertices = vertices
-        self.measurements = measurements
-    }
-}
-
-/// Result of loading a CAD file.
+/// Result of loading a CAD file with renderable bodies attached.
+///
+/// For headless / shape-only loads (no Viewport dep), use
+/// `OCCTSwiftIO.ShapeLoader.load` and `ShapeLoadResult` directly.
 public struct CADLoadResult: @unchecked Sendable {
     public var bodies: [ViewportBody]
     public var metadata: [String: CADBodyMetadata]
@@ -59,225 +36,44 @@ public struct CADLoadResult: @unchecked Sendable {
     }
 }
 
-/// Supported CAD file formats.
-public enum CADFileFormat: String, Sendable {
-    case step
-    case stl
-    case obj
-    case brep
-    case iges
-
-    public init?(fileExtension ext: String) {
-        switch ext.lowercased() {
-        case "step", "stp":
-            self = .step
-        case "stl":
-            self = .stl
-        case "obj":
-            self = .obj
-        case "brep", "brp":
-            self = .brep
-        case "iges", "igs":
-            self = .iges
-        default:
-            return nil
-        }
-    }
-}
-
-/// Loads CAD files via OCCTSwift and converts to ViewportBody arrays.
+/// Loads CAD files via OCCTSwiftIO and bridges the resulting shapes to
+/// `ViewportBody` + `CADBodyMetadata` for renderable + pickable consumers.
 public enum CADFileLoader {
 
     /// Loads a CAD file and returns viewport bodies with selection metadata.
     /// - Parameter progress: optional progress + cancellation observer. Honored
     ///   by `.step` and `.iges` formats only — STL/OBJ/BREP loaders are
-    ///   single-call upstream and don't surface progress. Pass an
-    ///   `ImportProgressClosure` for closure-style usage. If `progress.shouldCancel()`
+    ///   single-call upstream and don't surface progress. If `progress.shouldCancel()`
     ///   returns `true`, the import throws `OCCTSwift.ImportError.cancelled`.
     public static func load(
         from url: URL,
         format: CADFileFormat,
         progress: ImportProgress? = nil
     ) async throws -> CADLoadResult {
-        try await Task.detached {
-            try loadSync(from: url, format: format, progress: progress)
-        }.value
-    }
-
-    private static func loadSync(
-        from url: URL,
-        format: CADFileFormat,
-        progress: ImportProgress?
-    ) throws -> CADLoadResult {
-        switch format {
-        case .step:
-            return try loadSTEP(from: url, progress: progress)
-        case .stl:
-            return try loadSTL(from: url)
-        case .obj:
-            return try loadOBJ(from: url)
-        case .brep:
-            return try loadBREP(from: url)
-        case .iges:
-            return try loadIGES(from: url, progress: progress)
-        }
-    }
-
-    // MARK: - STEP Loading
-
-    private static func loadSTEP(from url: URL, progress: ImportProgress? = nil) throws -> CADLoadResult {
-        let doc = try Document.load(from: url, progress: progress)
-        let shapesWithColors = doc.shapesWithColors()
-
-        var bodies: [ViewportBody] = []
-        var metadata: [String: CADBodyMetadata] = [:]
-        var shapes: [Shape] = []
-
-        for (index, pair) in shapesWithColors.enumerated() {
-            let shape = pair.shape
-            let color = pair.color
-
-            let bodyID = "step-\(index)"
-
-            let rgba: SIMD4<Float>
-            if let c = color {
-                rgba = SIMD4<Float>(Float(c.red), Float(c.green), Float(c.blue), Float(c.alpha))
-            } else {
-                rgba = SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
-            }
-
-            let (body, meta) = shapeToBodyAndMetadata(shape, id: bodyID, color: rgba)
-            if let body {
-                bodies.append(body)
-                shapes.append(shape)
-                if let meta {
-                    metadata[bodyID] = meta
-                }
-            }
-        }
-
-        let dimensions = doc.dimensions
-        let geomTolerances = doc.geomTolerances
-        let datums = doc.datums
-
-        return CADLoadResult(
-            bodies: bodies, metadata: metadata, shapes: shapes,
-            dimensions: dimensions, geomTolerances: geomTolerances, datums: datums
+        let ioResult = try await ShapeLoader.load(from: url, format: format, progress: progress)
+        return bridgeWithFallback(
+            ioResult: ioResult, idPrefix: format.rawValue,
+            url: url, format: format, progress: progress
         )
     }
 
-    // MARK: - STL Loading
-
-    private static func loadSTL(from url: URL) throws -> CADLoadResult {
-        let shape = try Shape.loadSTL(from: url)
-
-        let bodyID = "stl-0"
-        let color = SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
-
-        let (body, meta) = shapeToBodyAndMetadata(shape, id: bodyID, color: color, stl: true)
-        guard let body else {
-            let robust = try Shape.loadSTLRobust(from: url)
-            let (body2, meta2) = shapeToBodyAndMetadata(robust, id: bodyID, color: color)
-            guard let body2 else {
-                return CADLoadResult(bodies: [], metadata: [:], shapes: [robust])
-            }
-            var metadata: [String: CADBodyMetadata] = [:]
-            if let meta2 { metadata[bodyID] = meta2 }
-            return CADLoadResult(bodies: [body2], metadata: metadata, shapes: [robust])
-        }
-
-        var metadata: [String: CADBodyMetadata] = [:]
-        if let meta { metadata[bodyID] = meta }
-        return CADLoadResult(bodies: [body], metadata: metadata, shapes: [shape])
-    }
-
-    // MARK: - OBJ Loading
-
-    private static func loadOBJ(from url: URL) throws -> CADLoadResult {
-        let shape = try Shape.loadOBJ(from: url)
-        let bodyID = "obj-0"
-        let color = SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
-
-        let (body, meta) = shapeToBodyAndMetadata(shape, id: bodyID, color: color)
-        guard let body else {
-            return CADLoadResult(bodies: [], metadata: [:], shapes: [shape])
-        }
-
-        var metadata: [String: CADBodyMetadata] = [:]
-        if let meta { metadata[bodyID] = meta }
-        return CADLoadResult(bodies: [body], metadata: metadata, shapes: [shape])
-    }
-
-    // MARK: - BREP Loading
-
-    private static func loadBREP(from url: URL) throws -> CADLoadResult {
-        let shape = try Shape.loadBREP(from: url)
-        let bodyID = "brep-0"
-        let color = SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
-
-        let (body, meta) = shapeToBodyAndMetadata(shape, id: bodyID, color: color)
-        guard let body else {
-            return CADLoadResult(bodies: [], metadata: [:], shapes: [shape])
-        }
-
-        var metadata: [String: CADBodyMetadata] = [:]
-        if let meta { metadata[bodyID] = meta }
-        return CADLoadResult(bodies: [body], metadata: metadata, shapes: [shape])
-    }
-
-    // MARK: - IGES Loading
-
-    private static func loadIGES(from url: URL, progress: ImportProgress? = nil) throws -> CADLoadResult {
-        let shape = try Shape.loadIGES(from: url, progress: progress)
-        let bodyID = "iges-0"
-        let color = SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
-
-        let (body, meta) = shapeToBodyAndMetadata(shape, id: bodyID, color: color)
-        guard let body else {
-            // Fall back to the sewing/healing variant — IGES files commonly
-            // ship with gaps OCCT's basic importer won't close. The fallback
-            // re-imports, so progress will pass through 0..1 a second time.
-            let robust = try Shape.loadIGESRobust(from: url, progress: progress)
-            let (body2, meta2) = shapeToBodyAndMetadata(robust, id: bodyID, color: color)
-            guard let body2 else {
-                return CADLoadResult(bodies: [], metadata: [:], shapes: [robust])
-            }
-            var metadata: [String: CADBodyMetadata] = [:]
-            if let meta2 { metadata[bodyID] = meta2 }
-            return CADLoadResult(bodies: [body2], metadata: metadata, shapes: [robust])
-        }
-
-        var metadata: [String: CADBodyMetadata] = [:]
-        if let meta { metadata[bodyID] = meta }
-        return CADLoadResult(bodies: [body], metadata: metadata, shapes: [shape])
-    }
-
-    // MARK: - Manifest Loading
-
     /// Loads bodies from a script manifest (manifest.json + BREP files).
     public static func loadFromManifest(at url: URL) throws -> CADLoadResult {
-        let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let manifest = try decoder.decode(ScriptManifest.self, from: data)
-        let baseDir = url.deletingLastPathComponent()
+        let ioResult = try ShapeLoader.loadFromManifest(at: url)
 
         var bodies: [ViewportBody] = []
         var metadata: [String: CADBodyMetadata] = [:]
         var shapes: [Shape] = []
 
-        for (index, descriptor) in manifest.bodies.enumerated() {
-            let fileURL = baseDir.appendingPathComponent(descriptor.file)
-            guard FileManager.default.fileExists(atPath: fileURL.path) else { continue }
+        for (index, pair) in ioResult.shapesWithColors.enumerated() {
+            let descriptor = ioResult.manifest?.bodies[index]
+            let bodyID = "script-\(descriptor?.id ?? "\(index)")"
+            let rgba = pair.color ?? SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
 
-            let shape = try Shape.loadBREP(from: fileURL)
-            let bodyID = "script-\(descriptor.id ?? "\(index)")"
-            let color = descriptor.color ?? SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
-
-            let (body, meta) = shapeToBodyAndMetadata(shape, id: bodyID, color: color)
+            let (body, meta) = shapeToBodyAndMetadata(pair.shape, id: bodyID, color: rgba)
             if let body {
                 bodies.append(body)
-                shapes.append(shape)
+                shapes.append(pair.shape)
                 if let meta { metadata[bodyID] = meta }
             }
         }
@@ -285,7 +81,96 @@ public enum CADFileLoader {
         return CADLoadResult(bodies: bodies, metadata: metadata, shapes: shapes)
     }
 
-    // MARK: - Shape → Body Conversion
+    // MARK: - Bridge with STL/IGES robust fallback
+
+    /// STL and IGES files commonly fail the primary loader → bridge path
+    /// (mesh generation returns nil because the input has gaps OCCT's basic
+    /// importer can't close). Fall back to the sewing/healing variant on
+    /// per-shape bridge failure. STEP / OBJ / BREP have no such fallback —
+    /// the primary loader is the only one.
+    private static func bridgeWithFallback(
+        ioResult: ShapeLoadResult,
+        idPrefix: String,
+        url: URL,
+        format: CADFileFormat,
+        progress: ImportProgress?
+    ) -> CADLoadResult {
+        var bodies: [ViewportBody] = []
+        var metadata: [String: CADBodyMetadata] = [:]
+        var shapes: [Shape] = []
+        var needsRobustReload = false
+
+        for (index, pair) in ioResult.shapesWithColors.enumerated() {
+            let bodyID = "\(idPrefix)-\(index)"
+            let rgba = pair.color ?? SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
+            let stl = (format == .stl)
+
+            let (body, meta) = shapeToBodyAndMetadata(pair.shape, id: bodyID, color: rgba, stl: stl)
+            if let body {
+                bodies.append(body)
+                shapes.append(pair.shape)
+                if let meta { metadata[bodyID] = meta }
+            } else if format == .stl || format == .iges {
+                needsRobustReload = true
+                break
+            }
+        }
+
+        // Single-shape STL/IGES fallback path: re-load via the robust loader
+        // and bridge again. Both formats currently produce a single shape.
+        if needsRobustReload {
+            return reloadRobustAndBridge(idPrefix: idPrefix, url: url, format: format, progress: progress)
+        }
+
+        return CADLoadResult(
+            bodies: bodies, metadata: metadata, shapes: shapes,
+            dimensions: ioResult.dimensions,
+            geomTolerances: ioResult.geomTolerances,
+            datums: ioResult.datums
+        )
+    }
+
+    private static func reloadRobustAndBridge(
+        idPrefix: String, url: URL, format: CADFileFormat, progress: ImportProgress?
+    ) -> CADLoadResult {
+        // The robust reload mirrors the primary load's blocking call — we're
+        // already on a detached task at this point (outer load() is async),
+        // so a sync call is fine.
+        do {
+            let ioRobust: ShapeLoadResult
+            switch format {
+            case .stl:
+                let robust = try Shape.loadSTLRobust(from: url)
+                ioRobust = ShapeLoadResult(shapesWithColors: [(shape: robust, color: nil)])
+            case .iges:
+                let robust = try Shape.loadIGESRobust(from: url, progress: progress)
+                ioRobust = ShapeLoadResult(shapesWithColors: [(shape: robust, color: nil)])
+            default:
+                return CADLoadResult()
+            }
+
+            var bodies: [ViewportBody] = []
+            var metadata: [String: CADBodyMetadata] = [:]
+            var shapes: [Shape] = []
+            for (index, pair) in ioRobust.shapesWithColors.enumerated() {
+                let bodyID = "\(idPrefix)-\(index)"
+                let rgba = pair.color ?? SIMD4<Float>(0.7, 0.7, 0.7, 1.0)
+                let (body, meta) = shapeToBodyAndMetadata(pair.shape, id: bodyID, color: rgba)
+                if let body {
+                    bodies.append(body)
+                    shapes.append(pair.shape)
+                    if let meta { metadata[bodyID] = meta }
+                } else {
+                    shapes.append(pair.shape)
+                }
+            }
+            return CADLoadResult(bodies: bodies, metadata: metadata, shapes: shapes)
+        } catch {
+            return CADLoadResult()
+        }
+    }
+
+    // MARK: - Mesh parameter presets
 
     /// High-quality mesh parameters for smooth curved surface rendering (no GPU tessellation).
     public static let highQualityMeshParams: MeshParameters = {
@@ -308,6 +193,8 @@ public enum CADFileLoader {
         p.inParallel = true
         return p
     }()
+
+    // MARK: - Shape → Body bridge
 
     /// Converts an OCCTSwift Shape to a ViewportBody and optional metadata.
     /// - Parameter stl: If true, uses coarser deflection suitable for pre-tessellated STL data
@@ -407,13 +294,11 @@ public enum CADFileLoader {
         return (body, meta)
     }
 
-    // MARK: - Edge Index Flattening (v0.4.1)
+    // MARK: - Edge / Vertex extraction helpers
 
     /// Flatten polyline-keyed edge indices into the per-segment array
     /// `ViewportBody.edgeIndices` expects. A polyline of N points contributes
     /// (N - 1) line segments, each tagged with the source edge's index.
-    /// Result length equals total flat segment count, matching the renderer's
-    /// flattened-line layout used by the GPU edge-pick pass.
     private static func flattenEdgeIndices(
         _ edgePolylines: [(edgeIndex: Int, points: [SIMD3<Float>])]
     ) -> [Int32] {
@@ -426,8 +311,6 @@ public enum CADFileLoader {
         }
         return result
     }
-
-    // MARK: - Edge Extraction
 
     private static func extractEdgePolylines(
         from shape: Shape
@@ -446,17 +329,10 @@ public enum CADFileLoader {
         return result
     }
 
-    // MARK: - Vertex Pick Data (v0.5.0 — source-shape convention)
-
     /// Collect source-shape vertices and their identity index array for the
     /// vertex-pick pass. Indexing matches `shape.vertices()` so consumers can
     /// round-trip a picked `primitiveIndex` back to a `TopoDS_Vertex` via
     /// `shape.vertex(at: primitiveIndex)`.
-    ///
-    /// Replaces v0.4.1's polyline-endpoint-deduplication approach, which
-    /// rendered the same number of points for typical solids but in a
-    /// different order — breaking AIS' `Selection.vertices` round-trip.
-    /// Closes [#10](https://github.com/gsdali/OCCTSwiftTools/issues/10).
     private static func sourceShapeVertexPickData(
         from shape: Shape
     ) -> (positions: [SIMD3<Float>], indices: [Int32]) {

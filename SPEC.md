@@ -51,33 +51,24 @@ The migration plan, in order:
 
 The OCCTSwiftViewport repo continues to ship the `OCCTSwiftViewport` library; the `OCCTSwiftTools` library disappears from there in the same release that this repo's `v0.1.0` ships.
 
-## Public API (v0.5.0)
+## Public API (v0.6.0)
+
+As of v0.6.0 ([#12](https://github.com/gsdali/OCCTSwiftTools/issues/12)), file-I/O concerns live in [OCCTSwiftIO](https://github.com/gsdali/OCCTSwiftIO) — a sibling package depending on OCCTSwift only. This repo (`OCCTSwiftTools`) is now bridge-only: Shape ↔ ViewportBody. `@_exported import OCCTSwiftIO` keeps existing `import OCCTSwiftTools` call sites source-compatible (the IO types still resolve via Tools' surface).
 
 ```swift
 import OCCTSwift
 import OCCTSwiftViewport
+import OCCTSwiftTools   // re-exports OCCTSwiftIO transitively (@_exported)
 
 // === Headline: file → renderable bodies ===
 
-public enum CADFileFormat: String, Sendable {
-    case step, stl, obj, brep, iges      // glTF still import-only via Document; export via ExportManager
-    public init?(fileExtension ext: String)
-}
+// CADFileFormat, ShapeLoader, ExportManager, ScriptManifest, CADBodyMetadata,
+// ImportProgressClosure all live in OCCTSwiftIO now. They're re-exported here
+// so existing `OCCTSwiftTools.X` references keep working.
 
-public struct CADBodyMetadata: Sendable {
-    public let faceIndices: [Int32]                                              // ⚑ load-bearing
-    public let edgePolylines: [(edgeIndex: Int, points: [SIMD3<Float>])]
-    public let vertices: [SIMD3<Float>]
-    public let measurements: ShapeMeasurements?                                  // populated when includeMeasurements: true
-}
-
-// `ShapeMeasurements` and `Shape.measure(linearTolerance:)` live in `OCCTSwift`
-// (kernel-side) as of OCCTSwift v0.170.1 — see [OCCTSwift PR #163]. This repo
-// just re-uses the type via `import OCCTSwift` (line 57). Hoisted in v0.5.1.
-
-public struct CADLoadResult: @unchecked Sendable {
+public struct CADLoadResult: @unchecked Sendable {                               // STAYS in Tools (has bodies)
     public var bodies: [ViewportBody]
-    public var metadata: [String: CADBodyMetadata]
+    public var metadata: [String: CADBodyMetadata]   // CADBodyMetadata is now an IO type
     public var shapes: [Shape]
     public var dimensions: [DimensionInfo]
     public var geomTolerances: [GeomToleranceInfo]
@@ -85,34 +76,24 @@ public struct CADLoadResult: @unchecked Sendable {
 }
 
 public enum CADFileLoader {
+    /// Façade over `OCCTSwiftIO.ShapeLoader.load(...)` — loads via IO, then
+    /// bridges each shape to a `ViewportBody` + `CADBodyMetadata`.
     public static func load(
         from url: URL, format: CADFileFormat,
-        progress: ImportProgress? = nil                                          // NEW v0.4.0
+        progress: ImportProgress? = nil
     ) async throws -> CADLoadResult
     public static func loadFromManifest(at url: URL) throws -> CADLoadResult
     public static func shapeToBodyAndMetadata(
         _ shape: Shape, id: String, color: SIMD4<Float>,
         stl: Bool = false, deflection: Double? = nil, gpuTessellation: Bool = false,
-        includeMeasurements: Bool = false                                        // v0.2.0
+        includeMeasurements: Bool = false
     ) -> (ViewportBody?, CADBodyMetadata?)
     public static let highQualityMeshParams: MeshParameters
     public static let tessellationMeshParams: MeshParameters
 }
 
-// === Import progress (v0.4.0) — re-exposes OCCTSwift.ImportProgress ===
-
-// `ImportProgress` is the upstream OCCTSwift protocol. Honored by `.step` and
-// `.iges` formats only — STL/OBJ/BREP loaders are single-call upstream and
-// don't surface progress. Returning `true` from `shouldCancel()` causes the
-// import to throw `OCCTSwift.ImportError.cancelled` at the next boundary.
-
-public final class ImportProgressClosure: ImportProgress {
-    public init(
-        cancelCheck: @escaping @Sendable () -> Bool = { false },
-        progress: @escaping @Sendable (Double, String) -> Void
-    )
-    // Conforms to ImportProgress.
-}
+// For headless / shape-only use, call `OCCTSwiftIO.ShapeLoader.load` directly
+// and avoid the Viewport dep entirely. See OCCTSwiftIO's README + CHANGELOG.
 
 // === Bridge converters (Shape sub-types → ViewportBody) ===
 
@@ -143,28 +124,11 @@ public enum BodyUtilities {
     public static func offsetBody(_ body: inout ViewportBody, dx: Float, dy: Float = 0, dz: Float = 0)
 }
 
-// === Export (OCCT-only) ===
+// === Export, manifest, format enums, progress closure → all in OCCTSwiftIO ===
 
-public enum ExportFormat: String, CaseIterable, Sendable {
-    case obj, ply, step, brep, gltf, glb     // .gltf = JSON + sibling .bin; .glb = single binary container
-}
-
-public enum ExportManager {
-    public static func export(shapes: [Shape], format: ExportFormat,
-                              to url: URL, deflection: Double = 0.1) async throws
-}
-
-// === Manifest model (Codable, no OCCT/viewport dep) ===
-
-public struct ScriptManifest: Codable, Sendable {
-    public let version: Int
-    public let timestamp: Date
-    public let description: String?
-    public let bodies: [BodyDescriptor]
-    public let metadata: ManifestMetadata?
-    public struct BodyDescriptor: Codable, Sendable { /* id, file, format, name, roughness, metallic, color */ }
-    public struct ManifestMetadata: Codable, Sendable { /* name, revision, dates, source, tags, notes */ }
-}
+// ExportManager / ExportFormat / ScriptManifest / CADFileFormat /
+// ImportProgressClosure / CADBodyMetadata moved to OCCTSwiftIO in v0.6.0.
+// Tools re-exports them via @_exported import for source compatibility.
 ```
 
 ### Load-bearing contracts: pick-index arrays
@@ -230,8 +194,9 @@ At minimum:
 5. **v0.4.1** *(shipped)* — populate `ViewportBody.edgeIndices` / `vertices` for AIS edge + vertex GPU picking (closes [#8](https://github.com/gsdali/OCCTSwiftTools/issues/8)). Pure data-wiring change in `shapeToBodyAndMetadata` — no API surface change. Floor bumped to OCCTSwiftViewport ≥ 0.55.0 for the new init parameters.
 6. **v0.5.0** *(shipped)* — converge `body.vertices` / `body.vertexIndices` / `metadata.vertices` on the source-shape convention so AIS can round-trip a picked `primitiveIndex` back to `TopoDS_Vertex` via `shape.vertex(at:)` (closes [#10](https://github.com/gsdali/OCCTSwiftTools/issues/10)). Pre-1.0 behavior change — no signature change.
 7. **v0.5.1** *(shipped)* — remove duplicate `ShapeMeasurements` after the OCCTSwift v0.170.1 kernel hoist (closes [#13](https://github.com/gsdali/OCCTSwiftTools/issues/13)). No public API change — the type still resolves at every call site, now via `import OCCTSwift`. Floor bumped to OCCTSwift ≥ 0.170.1.
+8. **v0.6.0** *(shipped)* — split file-I/O concerns into [OCCTSwiftIO](https://github.com/gsdali/OCCTSwiftIO) (closes [#12](https://github.com/gsdali/OCCTSwiftTools/issues/12)). `CADFileFormat`, `ShapeLoader`-style file loading, `ExportManager`, `ScriptManifest`, `ImportProgressClosure`, `CADBodyMetadata` all live in OCCTSwiftIO now (depends on OCCTSwift only — no Viewport). `OCCTSwiftTools` retains the Shape ↔ ViewportBody bridge: `CADFileLoader.shapeToBodyAndMetadata`, `.load(from:format:progress:)` (façade over IO), `loadFromManifest`, `CADLoadResult`. `@_exported import OCCTSwiftIO` keeps existing `import OCCTSwiftTools` call sites source-compatible.
 
-After v0.5 the surface is essentially stable; sit on v0.x until further AIS-side migration issues surface.
+After v0.6 both packages are in their stable shape; tag v1.0.0 against OCCT 8.0.0 GA when upstream lands.
 
 ## Ecosystem context to read before coding
 
