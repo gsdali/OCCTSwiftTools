@@ -71,21 +71,9 @@ public struct CADBodyMetadata: Sendable {
     public let measurements: ShapeMeasurements?                                  // populated when includeMeasurements: true
 }
 
-// === Measurements — for OCCTSwiftAIS dimension widget ===
-
-public struct ShapeMeasurements: Sendable {
-    public let faceAreas: [Double]                  // parallel to shape.faces()
-    public let edgeLengths: [Double]                // parallel to shape.edge(at: 0..<edgeCount)
-    public let faceCentroids: [SIMD3<Double>]       // v0.3.0 — parallel to faceAreas
-    public let facePerimeters: [Double?]            // v0.3.0 — outer-wire length, nil if unavailable
-    public var totalFaceArea: Double { get }
-    public var totalEdgeLength: Double { get }
-    public var totalFacePerimeter: Double { get }   // v0.3.0 — sums non-nil entries
-}
-
-extension Shape {
-    public func measure(linearTolerance: Double = 1e-6) -> ShapeMeasurements
-}
+// `ShapeMeasurements` and `Shape.measure(linearTolerance:)` live in `OCCTSwift`
+// (kernel-side) as of OCCTSwift v0.170.1 — see [OCCTSwift PR #163]. This repo
+// just re-uses the type via `import OCCTSwift` (line 57). Hoisted in v0.5.1.
 
 public struct CADLoadResult: @unchecked Sendable {
     public var bodies: [ViewportBody]
@@ -231,7 +219,7 @@ At minimum:
 - `SurfaceConverterTests` — emits 1–2 bodies with `-u`/`-v` ID suffixes; edge counts match `uLines`/`vLines`.
 - `ExportManagerTests` — round-trip box export to OBJ/STEP/BREP/glTF/GLB into `/tmp`; assert files exist and are non-empty.
 - `ScriptManifestTests` — Codable round-trip including `colorArray` ↔ `color: SIMD4<Float>` mapping.
-- `ShapeMeasurementsTests` — box totals match analytical surface area (62 mm² for 2×3×5), edge length (40 mm), and face perimeter (80 mm); face centroids lie inside their face bounding boxes; cylinder cap centroids are on-axis; `includeMeasurements: true` populates `CADBodyMetadata.measurements`.
+- `ShapeMeasurementsTests` — `includeMeasurements: true` populates `CADBodyMetadata.measurements` via `CADFileLoader.shapeToBodyAndMetadata`. The numeric correctness cases (box totals, centroid bounds, cap-on-axis) live in the OCCTSwift kernel suite as of v0.5.1's hoist.
 
 ## Sequencing
 
@@ -241,6 +229,7 @@ At minimum:
 4. **v0.4.0** *(shipped)* — STEP/IGES import progress + cancellation, plumbed from upstream `OCCTSwift.ImportProgress` (added in OCCTSwift v0.168.0, closed [OCCTSwift#98](https://github.com/gsdali/OCCTSwift/issues/98)). `CADFileLoader.load(from:format:progress:)` and an `ImportProgressClosure` ergonomic adapter. STL/OBJ/BREP unchanged — those upstream loaders don't surface progress.
 5. **v0.4.1** *(shipped)* — populate `ViewportBody.edgeIndices` / `vertices` for AIS edge + vertex GPU picking (closes [#8](https://github.com/gsdali/OCCTSwiftTools/issues/8)). Pure data-wiring change in `shapeToBodyAndMetadata` — no API surface change. Floor bumped to OCCTSwiftViewport ≥ 0.55.0 for the new init parameters.
 6. **v0.5.0** *(shipped)* — converge `body.vertices` / `body.vertexIndices` / `metadata.vertices` on the source-shape convention so AIS can round-trip a picked `primitiveIndex` back to `TopoDS_Vertex` via `shape.vertex(at:)` (closes [#10](https://github.com/gsdali/OCCTSwiftTools/issues/10)). Pre-1.0 behavior change — no signature change.
+7. **v0.5.1** *(shipped)* — remove duplicate `ShapeMeasurements` after the OCCTSwift v0.170.1 kernel hoist (closes [#13](https://github.com/gsdali/OCCTSwiftTools/issues/13)). No public API change — the type still resolves at every call site, now via `import OCCTSwift`. Floor bumped to OCCTSwift ≥ 0.170.1.
 
 After v0.5 the surface is essentially stable; sit on v0.x until further AIS-side migration issues surface.
 
