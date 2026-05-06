@@ -2,6 +2,43 @@
 
 Most recent first. Pre-1.0: free to break; deprecations documented here.
 
+## v0.6.0 — 2026-05-06
+
+Closes [#12](https://github.com/gsdali/OCCTSwiftTools/issues/12). Splits file-I/O concerns into [OCCTSwiftIO](https://github.com/gsdali/OCCTSwiftIO) — a sibling package that depends on `OCCTSwift` only (no `OCCTSwiftViewport`). Headless consumers (Scripts, PadCAM CLI, batch pipelines, server-side workflows) can now load STEP / IGES / STL / OBJ / BREP files without dragging in the Metal renderer transitively.
+
+**Source compatibility preserved.** `OCCTSwiftTools` adds `@_exported import OCCTSwiftIO` so every type that moved still resolves through `OCCTSwiftTools`'s surface — existing call sites (`OCCTSwiftTools.CADFileFormat`, `OCCTSwiftTools.ExportManager`, etc.) keep working unchanged.
+
+**What moved to [OCCTSwiftIO v0.1.0](https://github.com/gsdali/OCCTSwiftIO/releases/tag/v0.1.0):**
+
+- `enum CADFileFormat` — file-format enum.
+- `enum ExportManager` + `enum ExportFormat` — OBJ / PLY / STEP / BREP / glTF / GLB writers.
+- `struct ScriptManifest` — Codable harness manifest.
+- `final class ImportProgressClosure` — closure-backed `OCCTSwift.ImportProgress` adapter.
+- `struct CADBodyMetadata` — pure-data picking metadata. Stays Viewport-free; bridge consumes it.
+- New: `enum ShapeLoader` — headless loader API. Returns `ShapeLoadResult { shapesWithColors, dimensions, geomTolerances, datums, manifest }`. No `ViewportBody`.
+
+**What stays in `OCCTSwiftTools`:**
+
+- `CADFileLoader.shapeToBodyAndMetadata(...)` — the bridge. Unchanged signature.
+- `CADFileLoader.load(...)` — now a façade over `OCCTSwiftIO.ShapeLoader.load(...)` plus per-shape bridge. Returns `CADLoadResult` with `bodies: [ViewportBody]` as before.
+- `CADFileLoader.loadFromManifest(...)` — same façade pattern.
+- `CADLoadResult` (has `bodies: [ViewportBody]` — couldn't move).
+- Mesh parameter presets (`highQualityMeshParams`, `tessellationMeshParams`).
+- All Shape sub-type bridges: `CurveConverter`, `SurfaceConverter`, `WireConverter`, `BodyUtilities`.
+- STL/IGES robust-loader fallback path: if the primary load + bridge fails (mesh nil), Tools re-loads via `Shape.loadSTLRobust` / `Shape.loadIGESRobust` and re-bridges. The fallback is bridge-aware so it lives here, not in IO.
+
+**Consumer migration (optional):**
+
+- Bridge users (AIS, CADKit, custom Metal viewers) — no change. `import OCCTSwiftTools` continues to work, and the `@_exported` re-export means even direct `OCCTSwiftTools.ExportManager` etc. references still resolve.
+- Headless users (Scripts, PadCAM CLI, batch tools) — switch `import OCCTSwiftTools` to `import OCCTSwiftIO` and call `ShapeLoader.load(...)` directly to drop the transitive Viewport dep. `CADLoadResult` has no equivalent in IO; `ShapeLoadResult` is the headless analogue (`shapesWithColors`, no bodies).
+
+**Dependencies bumped:**
+- New: `OCCTSwiftIO` ≥ `0.1.0`.
+- `OCCTSwift` ≥ `0.170.1` — unchanged.
+- `OCCTSwiftViewport` ≥ `0.55.0` — unchanged.
+
+**Tests:** down to **15 in 5 suites** (was 29 in 8) — `ExportManagerTests`, `ImportProgressTests`, `ScriptManifestTests` moved to OCCTSwiftIO. `CADFileLoaderTests`, `BodyUtilitiesTests`, `CurveConverterTests`, `SurfaceConverterTests`, `ShapeMeasurementsTests` stay.
+
 ## v0.5.1 — 2026-05-06
 
 Closes [#13](https://github.com/gsdali/OCCTSwiftTools/issues/13). `ShapeMeasurements` and `Shape.measure(linearTolerance:)` were hoisted into the OCCTSwift kernel in [OCCTSwift v0.170.1](https://github.com/gsdali/OCCTSwift/releases/tag/v0.170.1) (PR [#163](https://github.com/gsdali/OCCTSwift/pull/163)). This release removes the duplicate copy that lived here.
