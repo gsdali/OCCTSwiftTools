@@ -2,6 +2,20 @@
 
 Most recent first. Pre-1.0: free to break; deprecations documented here.
 
+## v0.5.1 — 2026-05-06
+
+Closes [#13](https://github.com/gsdali/OCCTSwiftTools/issues/13). `ShapeMeasurements` and `Shape.measure(linearTolerance:)` were hoisted into the OCCTSwift kernel in [OCCTSwift v0.170.1](https://github.com/gsdali/OCCTSwift/releases/tag/v0.170.1) (PR [#163](https://github.com/gsdali/OCCTSwift/pull/163)). This release removes the duplicate copy that lived here.
+
+**No public API change.** `ShapeMeasurements` and `shape.measure()` still resolve at every existing call site — they now come from `OCCTSwift` instead of `OCCTSwiftTools`. `CADFileLoader.shapeToBodyAndMetadata(includeMeasurements: true)` still populates `CADBodyMetadata.measurements` exactly as before; the field's type is now the kernel-side `ShapeMeasurements`, which is identical in shape and behaviour to the previous Tools-side type.
+
+**What changed in the repo:**
+- Deleted `Sources/OCCTSwiftTools/ShapeMeasurements.swift`.
+- Trimmed `Tests/OCCTSwiftToolsTests/ShapeMeasurementsTests.swift` to the single Tools-specific case (`t_metadataIncludesMeasurementsWhenRequested`, which exercises `CADFileLoader.shapeToBodyAndMetadata`). The other 5 cases live in the OCCTSwift kernel test suite as of #163.
+
+**Dependencies bumped:**
+- `OCCTSwift` ≥ **0.170.1** *(was 0.168.0)* — required for the kernel-side `ShapeMeasurements` type. The xcframework binary is unchanged from v0.170.0, so SPM consumers don't re-download.
+- `OCCTSwiftViewport` ≥ `0.55.0` — unchanged.
+
 ## v0.5.0 — 2026-05-03
 
 **Behaviour change (pre-1.0).** Closes [#10](https://github.com/gsdali/OCCTSwiftTools/issues/10).
