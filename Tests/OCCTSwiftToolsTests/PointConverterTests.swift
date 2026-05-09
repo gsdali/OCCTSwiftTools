@@ -89,4 +89,48 @@ struct PointConverterTests {
         )
         #expect(body?.color == SIMD4<Float>(0.1, 0.2, 0.3, 0.5))
     }
+
+    // MARK: - Renderer-side fields wired through (Viewport #28 → Tools follow-up)
+
+    @Test func t_primitiveKindIsPoint() {
+        let body = PointConverter.pointsToBody([SIMD3(0, 0, 0)], id: "kind")
+        #expect(body?.primitiveKind == .point,
+                "PointConverter must mark the body so the renderer dispatches to the point pass")
+    }
+
+    @Test func t_pointRadiusRoundTrips() {
+        let body = PointConverter.pointsToBody(
+            [SIMD3(0, 0, 0)],
+            id: "radius",
+            pointRadius: 0.42
+        )
+        #expect(body?.pointRadius == 0.42, "explicit pointRadius must be carried through to the body")
+    }
+
+    @Test func t_defaultPointRadiusMatchesSignature() {
+        let body = PointConverter.pointsToBody([SIMD3(0, 0, 0)], id: "default-radius")
+        #expect(body?.pointRadius == 0.05,
+                "default pointRadius must match the signature's documented default")
+    }
+
+    @Test func t_perPointColorsRoundTrip() {
+        let pts: [SIMD3<Float>] = [SIMD3(0, 0, 0), SIMD3(1, 0, 0), SIMD3(0, 1, 0)]
+        let colors: [SIMD4<Float>] = [
+            SIMD4(1, 0, 0, 1),
+            SIMD4(0, 1, 0, 1),
+            SIMD4(0, 0, 1, 1),
+        ]
+        let body = PointConverter.pointsToBody(pts, id: "rgb", perPointColors: colors)
+        #expect(body?.vertexColors.count == 3, "perPointColors must populate vertexColors")
+        #expect(body?.vertexColors == colors)
+    }
+
+    @Test func t_perPointColorsNilLeavesVertexColorsEmpty() {
+        let body = PointConverter.pointsToBody(
+            [SIMD3(0, 0, 0), SIMD3(1, 0, 0)],
+            id: "no-colors"
+        )
+        #expect(body?.vertexColors.isEmpty == true,
+                "nil perPointColors must leave vertexColors empty so the renderer falls back to body.color")
+    }
 }

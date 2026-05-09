@@ -6,7 +6,7 @@ The bridge layer between [OCCTSwift](https://github.com/gsdali/OCCTSwift) (B-Rep
 
 Part of the [OCCTSwift ecosystem](https://github.com/gsdali/OCCTSwift/blob/main/docs/ecosystem.md) — see the ecosystem map for how this package fits with the kernel, viewport, and sibling layers.
 
-> Status: **v1.0.1**. SemVer-stable from v1.0.0. See [docs/CHANGELOG.md](docs/CHANGELOG.md) and [SPEC.md](SPEC.md).
+> Status: **v1.1.0**. SemVer-stable from v1.0.0; versioning follows the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md). See [docs/CHANGELOG.md](docs/CHANGELOG.md) and [SPEC.md](SPEC.md).
 
 ## What it does
 
@@ -50,7 +50,7 @@ Per-domain helpers that turn an OCCT-or-raw input into a `ViewportBody`:
 | `WireConverter.wireToBody` | `Wire` | Edge polyline |
 | `PointConverter.pointsToBody` | `[SIMD3<Float>]` | Point list (no mesh, no edges) |
 
-> **Note on `PointConverter`**: produces a `ViewportBody` whose `vertices` carry the cloud points. Renderer-side support for drawing those vertices as on-screen point primitives is tracked separately on the OCCTSwiftViewport side; until that lands, the body shape is correct but the points won't be visible. Consumers (e.g. OCCTMCP's `add_scene_primitive(pointCloud)`) can switch to it now and lift their existing point-count caps once the renderer ticket lands.
+> **Note on `PointConverter`**: produces a `ViewportBody` with `primitiveKind == .point`, drawn by the point-cloud rendering pipeline added in [OCCTSwiftViewport v1.0.2](https://github.com/gsdali/OCCTSwiftViewport/releases/tag/v1.0.2) (issue [#28](https://github.com/gsdali/OCCTSwiftViewport/issues/28)). `pointRadius` and `perPointColors` are now carried through to the body's `pointRadius` and `vertexColors` fields; consumers (e.g. OCCTMCP's `add_scene_primitive(pointCloud)`) can lift their previous sphere-compound caps and render tens of thousands of points cleanly.
 
 ## Installation
 
