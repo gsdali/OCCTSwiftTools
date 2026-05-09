@@ -36,6 +36,20 @@ OCCTSwift   OCCTSwiftViewport
 
 OCCTSwiftTools is the only repo that depends on **both** sibling kernels. OCCTSwiftAIS depends on this; the two kernels stay decoupled from each other.
 
+## Converters
+
+Per-domain helpers that turn an OCCT-or-raw input into a `ViewportBody`:
+
+| Helper | Input | Output body shape |
+|---|---|---|
+| `CADFileLoader.shapeToBodyAndMetadata` | `OCCTSwift.Shape` | Triangulated mesh + picking metadata |
+| `CurveConverter.curve2DToBody` / `curve3DToBody` | `Curve2D` / `Curve3D` | Edge polyline (no mesh) |
+| `SurfaceConverter` | `Surface` | Triangulated surface mesh |
+| `WireConverter.wireToBody` | `Wire` | Edge polyline |
+| `PointConverter.pointsToBody` | `[SIMD3<Float>]` | Point list (no mesh, no edges) |
+
+> **Note on `PointConverter`**: produces a `ViewportBody` whose `vertices` carry the cloud points. Renderer-side support for drawing those vertices as on-screen point primitives is tracked separately on the OCCTSwiftViewport side; until that lands, the body shape is correct but the points won't be visible. Consumers (e.g. OCCTMCP's `add_scene_primitive(pointCloud)`) can switch to it now and lift their existing point-count caps once the renderer ticket lands.
+
 ## Installation
 
 ```swift
