@@ -4,7 +4,9 @@
 
 The bridge layer between [OCCTSwift](https://github.com/gsdali/OCCTSwift) (B-Rep modeling kernel) and [OCCTSwiftViewport](https://github.com/gsdali/OCCTSwiftViewport) (Metal viewport).
 
-> Status: **v0.1.0**. The migration out of OCCTSwiftViewport's sub-product slot is complete. See [docs/CHANGELOG.md](docs/CHANGELOG.md) and [SPEC.md](SPEC.md).
+Part of the [OCCTSwift ecosystem](https://github.com/gsdali/OCCTSwift/blob/main/docs/ecosystem.md) — see the ecosystem map for how this package fits with the kernel, viewport, and sibling layers.
+
+> Status: **v1.0.1**. SemVer-stable from v1.0.0. See [docs/CHANGELOG.md](docs/CHANGELOG.md) and [SPEC.md](SPEC.md).
 
 ## What it does
 
