@@ -1,6 +1,30 @@
 # Changelog
 
-Most recent first. Pre-1.0: free to break; deprecations documented here.
+Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0.
+
+## v1.0.1 — 2026-05-09
+
+`PointConverter.pointsToBody(_:id:color:pointRadius:perPointColors:)` — sibling to `CurveConverter` / `SurfaceConverter` / `WireConverter`. Produces a `ViewportBody` whose `vertices` carry the cloud points and whose `vertexData` / `indices` / `edges` are empty; the renderer is expected to interpret the body as a point list.
+
+OCCTMCP's `add_scene_primitive(pointCloud)` is the immediate consumer. Today (OCCTMCP v0.9) it caps at ~256 points and synthesises a sphere compound (~50k tris); switching to `PointConverter` lifts the cap because the body avoids triangulation entirely.
+
+`pointRadius` and `perPointColors` are accepted as parameters for forward compatibility but the current `ViewportBody` has no fields to carry them. Renderer-side support for drawing those vertices as on-screen point primitives is tracked separately on the OCCTSwiftViewport side; until that lands, the body shape is correct but the points won't be visible.
+
+Validation: `perPointColors.count` must equal `points.count` when non-nil — returns `nil` on mismatch. Empty input is valid (returns an empty body for clearing prior point sets).
+
+Closes [#18](https://github.com/gsdali/OCCTSwiftTools/issues/18). Pure additive — no API surface removed or changed.
+
+## v1.0.0 — 2026-05-08
+
+OCCTSwift v1.0.0 / OCCT 8.0.0 GA cohort. Pure dep bumps to graduate alongside the cohort:
+
+- `OCCTSwift` 0.170.1 → 1.0.1
+- `OCCTSwiftIO` 0.1.0 → 1.0.0
+- `OCCTSwiftViewport` stays at 0.55.0 (no v1.0 yet)
+
+No public API changes. SemVer-stable from this tag.
+
+Closes [#16](https://github.com/gsdali/OCCTSwiftTools/issues/16).
 
 ## v0.6.0 — 2026-05-06
 
