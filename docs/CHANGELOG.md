@@ -2,6 +2,15 @@
 
 Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0.
 
+## v1.0.2 — 2026-05-09
+
+Pure dep bump:
+
+- `OCCTSwiftViewport` 0.55.0 → 1.0.1 (graduates onto the SemVer-stable Viewport line).
+- `OCCTSwift` 1.0.1 → 1.0.3 (picks up the v1.0.2 / v1.0.3 history APIs from [OCCTSwift#165](https://github.com/gsdali/OCCTSwift/issues/165)).
+
+No public API changes in this package. `swift build` clean, `swift test` green (20 tests, 6 suites).
+
 ## v1.0.1 — 2026-05-09
 
 `PointConverter.pointsToBody(_:id:color:pointRadius:perPointColors:)` — sibling to `CurveConverter` / `SurfaceConverter` / `WireConverter`. Produces a `ViewportBody` whose `vertices` carry the cloud points and whose `vertexData` / `indices` / `edges` are empty; the renderer is expected to interpret the body as a point list.
