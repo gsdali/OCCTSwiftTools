@@ -6,10 +6,11 @@
 // `WireConverter` — keeps the "given X domain object, produce a ViewportBody"
 // layering consistent.
 //
-// The body produced has empty `vertexData` / `indices` / `edges`. Its
-// `vertices` carry the cloud points; the renderer is expected to interpret
-// them as point primitives. The Metal point-rendering pipeline itself is
-// renderer-side work tracked separately on OCCTSwiftViewport.
+// The body produced has empty `vertexData` / `indices` / `edges`, its
+// `vertices` carry the cloud points, and `primitiveKind == .point` so the
+// renderer dispatches to the point-cloud pipeline added in OCCTSwiftViewport
+// v1.0.2 (issue #28). Per-point colours and the world-space point radius
+// flow through `vertexColors` and `pointRadius`.
 
 import simd
 import OCCTSwiftViewport
@@ -17,26 +18,25 @@ import OCCTSwiftViewport
 /// Converts raw point clouds to point-only `ViewportBody` values.
 public enum PointConverter {
 
-    /// Build a `ViewportBody` whose `vertices` carry the input point cloud
-    /// for renderer-side point rendering (no triangulation, no wireframe).
+    /// Build a `ViewportBody` whose `vertices` carry the input point cloud,
+    /// rendered as point sprites by OCCTSwiftViewport's point-cloud pipeline.
     ///
     /// Returns `nil` if `perPointColors` is non-nil and its length doesn't
-    /// match `points.count` (length validation). Empty input is valid and
-    /// returns an empty body — useful for clearing a prior point set without
-    /// removing the body itself.
+    /// match `points.count`. Empty input is valid and returns an empty body —
+    /// useful for clearing a prior point set without removing the body itself.
     ///
     /// - Parameters:
-    ///   - points: point positions, in viewport-space coordinates
-    ///   - id: stable id for the body
-    ///   - color: fallback color used when the renderer doesn't sample
-    ///     `perPointColors`. RGBA, defaults to a soft amber.
-    ///   - pointRadius: intended on-screen radius (in world units) for each
-    ///     point. The current renderer ignores this; wiring it up is renderer-
-    ///     side work tracked on the OCCTSwiftViewport side.
-    ///   - perPointColors: optional per-point colors. Must match `points.count`
-    ///     when non-nil. The current renderer doesn't sample these (no
-    ///     `vertexColors` field on `ViewportBody` yet); accepted here so the
-    ///     API doesn't have to change when the renderer-side ticket lands.
+    ///   - points: point positions, in viewport-space coordinates.
+    ///   - id: stable id for the body.
+    ///   - color: fallback colour applied to every point when
+    ///     `perPointColors` is nil. RGBA, defaults to a soft amber.
+    ///   - pointRadius: world-space radius for each point sprite. The
+    ///     renderer projects this to screen-space pixels and clamps to
+    ///     `[1, 64]` px (Apple's `[[point_size]]` upper bound).
+    ///   - perPointColors: optional per-point colours. Must match
+    ///     `points.count` when non-nil. Stored on the body's `vertexColors`
+    ///     and sampled by the renderer when populated; otherwise every
+    ///     point uses `color`.
     public static func pointsToBody(
         _ points: [SIMD3<Float>],
         id: String,
@@ -47,14 +47,16 @@ public enum PointConverter {
         if let perPointColors, perPointColors.count != points.count {
             return nil
         }
-        _ = pointRadius // accepted for forward-compat; renderer wiring tracked separately
         return ViewportBody(
             id: id,
             vertexData: [],
             indices: [],
             edges: [],
             vertices: points,
-            color: color
+            vertexColors: perPointColors ?? [],
+            color: color,
+            pointRadius: pointRadius,
+            primitiveKind: .point
         )
     }
 }

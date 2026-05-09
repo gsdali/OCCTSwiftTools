@@ -1,6 +1,18 @@
 # Changelog
 
-Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0.
+Most recent first. Pre-1.0 was free to break; SemVer-stable from v1.0.0 per the [cohort SemVer policy](https://github.com/gsdali/OCCTSwift/blob/main/docs/SEMVER.md).
+
+## v1.1.0 — 2026-05-09
+
+`PointConverter.pointsToBody` now wires its `pointRadius` and `perPointColors` parameters through to the new `ViewportBody.pointRadius` / `vertexColors` fields, and stamps `primitiveKind = .point` so OCCTSwiftViewport's point-cloud rendering pipeline (added in [Viewport v1.0.2](https://github.com/gsdali/OCCTSwiftViewport/releases/tag/v1.0.2), issue [#28](https://github.com/gsdali/OCCTSwiftViewport/issues/28)) draws the body as visible point sprites.
+
+The Swift signature of `pointsToBody` is unchanged — the params used to be accepted-but-discarded for forward-compat. Consumers passing them now get the behaviour they always intended; consumers ignoring them keep the soft-amber fallback color and the 0.05-world-unit default radius.
+
+Bumped to **MINOR** per the cohort SemVer policy: the params went from no-op to functional, which is "new functionality consumers can opt into."
+
+**Dep bump:** `OCCTSwiftViewport from: "1.0.1"` → `from: "1.0.2"`. Required for the new ViewportBody fields.
+
+Closes the renderer-side gap noted in [#18](https://github.com/gsdali/OCCTSwiftTools/issues/18). Downstream consumers (OCCTMCP's `add_scene_primitive(pointCloud)`) can now drop the 256-point sphere-compound workaround.
 
 ## v1.0.2 — 2026-05-09
 
