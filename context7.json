@@ -1,0 +1,17 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "OCCTSwiftTools",
+  "description": "The bridge layer of the OCCTSwift ecosystem: it converts OCCTSwift kernel objects (Shape, Curve2D/Curve3D, Surface, Wire) and raw point clouds into the ViewportBody values that the OCCTSwiftViewport Metal renderer draws. Its public surface is a set of namespacing enums of static funcs (PointConverter, CurveConverter, SurfaceConverter, WireConverter, BodyUtilities, CADFileLoader) plus a CADLoadResult struct. CADFileLoader additionally wraps OCCTSwiftIO's headless ShapeLoader to load CAD files into renderable, pickable bodies.",
+  "folders": ["docs", "Sources/OCCTSwiftTools"],
+  "excludeFolders": ["Tests", ".build"],
+  "rules": [
+    "Import the module with `import OCCTSwiftTools`; add `import OCCTSwift` when you also touch kernel types (Shape, Curve2D/Curve3D, Surface, Wire) and `import simd` for SIMD vectors.",
+    "Every converter is a `public enum` used as a namespace of `static func`s — call them statically (e.g. `PointConverter.pointsToBody(...)`), there are no instances to construct.",
+    "The package's role is the OCCTSwift kernel -> ViewportBody bridge; it is the only repo depending on both OCCTSwift and OCCTSwiftViewport, sitting below OCCTSwiftAIS in the layered stack.",
+    "`PointConverter.pointsToBody(_:id:color:pointRadius:perPointColors:)` returns an Optional: it returns nil when `perPointColors` is non-nil and its length does not equal `points.count`. Empty input is valid and returns an empty point body for clearing a prior point set.",
+    "`CurveConverter`, `SurfaceConverter`, and `WireConverter` produce edge-only or isoparametric-grid bodies (no mesh). `curve2DToBody` projects onto the XZ ground plane (Y=0); `surfaceToGridBodies` returns up to two bodies named `<idPrefix>-u` and `<idPrefix>-v`.",
+    "`CADFileLoader.shapeToBodyAndMetadata(_:id:color:...)` returns a `(ViewportBody?, CADBodyMetadata?)` tuple; both are nil only when meshing fails AND no edge polylines can be extracted. It defaults to the high-quality mesh preset; `stl`, `deflection`, and `gpuTessellation` steer mesh density, and `edgeDeflection`/`maxPointsPerEdge` tune the independent wireframe edge polylines.",
+    "`CADFileLoader.load(from:format:progress:)` is `async throws` and wraps OCCTSwiftIO's ShapeLoader, returning a `CADLoadResult` (bodies, metadata, shapes, and PMI: dimensions/geomTolerances/datums). STL and IGES auto-fall-back to the robust sewing/healing loaders; STEP/OBJ/BREP do not. A cancelling `ImportProgress` throws `OCCTSwift.ImportError.cancelled`.",
+    "For headless, shape-only work with no Viewport dependency, skip CADFileLoader and use `OCCTSwiftIO.ShapeLoader.load` / `ShapeLoadResult` directly — CADFileLoader exists specifically to add the ViewportBody bridge on top."
+  ]
+}

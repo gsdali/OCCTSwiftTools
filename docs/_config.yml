@@ -1,0 +1,12 @@
+title: OCCTSwiftTools
+description: The bridge layer between the OCCTSwift B-Rep kernel and the OCCTSwiftViewport Metal renderer — converts Shapes, curves, surfaces, wires, and point clouds into ViewportBody values.
+remote_theme: just-the-docs/just-the-docs@v0.3.3
+search_enabled: true
+heading_anchors: true
+aux_links:
+  "GitHub": ["https://github.com/SecondMouseAU/OCCTSwiftTools"]
+aux_links_new_tab: true
+exclude:
+  - "*.sh"
+  - Gemfile
+  - Gemfile.lock
