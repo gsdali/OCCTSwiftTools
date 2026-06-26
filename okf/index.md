@@ -40,3 +40,7 @@ and OpenCASCADE upstream.
   [SPEC.md](https://github.com/SecondMouseAU/OCCTSwiftTools/blob/main/SPEC.md).
 - Platform floor is the higher of OCCTSwift's and OCCTSwiftViewport's (macOS 15 / iOS 18).
 - Published to the Swift Package Index via `.spi.yml`. LGPL-2.1 (matching OCCT).
+
+## Policies
+
+- [Query `context` first for OCCT / OCCTSwift docs](policies/context-first.md)
